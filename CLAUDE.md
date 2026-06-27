@@ -125,8 +125,15 @@ Milestone 1 (done): live BT/ET/RoR curve over WebSocket, start/stop, event
 markers (Turning Point, Dry End, First Crack, Drop), all working on the
 simulator and wired for the real 1048.
 
+Milestone 2 (done): persist completed roasts to SQLite + a history/review view.
+A finished roast is saved on `/roast/stop` (curve + events, with denormalized
+duration/peak-BT for the list). New REST routes: `GET /roasts` (summaries),
+`GET /roasts/{id}` (full curve), `DELETE /roasts/{id}`. Storage is isolated in
+`adapter/storage.py` (one `roasts` table, curve/events as JSON blobs); the DB
+file is `adapter/roasts.db` (gitignored). The web UI gains a Live/History tab
+toggle (`web/src/RoastHistory.tsx`); the review view reuses `RoastChart`.
+
 Not yet built (good next tasks):
-- Persist completed roasts (SQLite in the adapter) + a history/review view.
 - Roast profiles: overlay a target curve and roast-to-template (core Cropster
   feature).
 - CSV / Artisan-compatible export.

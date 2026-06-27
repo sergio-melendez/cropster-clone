@@ -22,11 +22,12 @@ from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import storage
 from hardware import PhidgetSource, SimulatedSource, TemperatureSource
 
 SAMPLE_HZ = 2.0                 # readings per second
@@ -62,6 +63,7 @@ class RoastState:
     def __init__(self) -> None:
         self.roasting = False
         self.t0: float | None = None
+        self.started_wall: float | None = None  # epoch seconds at charge (for persistence)
         self.history: list[dict] = []          # [{t, bt, et, ror}, ...]
         self.events: list[dict] = []           # [{t, type, label}, ...]
         self._bt_window: deque = deque()       # (t, bt) for RoR
@@ -69,6 +71,7 @@ class RoastState:
     def start(self) -> None:
         self.roasting = True
         self.t0 = time.monotonic()
+        self.started_wall = time.time()
         self.history.clear()
         self.events.clear()
         self._bt_window.clear()
@@ -144,6 +147,7 @@ async def sampler() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    storage.init_db()
     task = asyncio.create_task(sampler())
     yield
     task.cancel()
@@ -173,9 +177,20 @@ async def roast_start():
 
 @app.post("/roast/stop")
 async def roast_stop():
+    # Persist the completed roast before we stop. Guard on `roasting` so a
+    # repeated /roast/stop is idempotent (history lingers after stop, so without
+    # this a second call would save the same roast again). A roast with no
+    # readings (stopped immediately) isn't worth saving.
+    roast_id: int | None = None
+    if state.roasting and state.history:
+        roast_id = storage.save_roast(
+            started_at=state.started_wall or time.time(),
+            history=state.history,
+            events=state.events,
+        )
     state.stop()
-    await manager.broadcast({"type": "roast_stopped"})
-    return {"ok": True, "roasting": False}
+    await manager.broadcast({"type": "roast_stopped", "roast_id": roast_id})
+    return {"ok": True, "roasting": False, "roast_id": roast_id}
 
 
 @app.post("/roast/event")
@@ -197,6 +212,27 @@ async def status():
         "events": state.events,
         "sample_hz": SAMPLE_HZ,
     }
+
+
+# ---- saved roasts (history / review) -----------------------------------------
+@app.get("/roasts")
+async def roasts_list():
+    return {"roasts": storage.list_roasts()}
+
+
+@app.get("/roasts/{roast_id}")
+async def roasts_get(roast_id: int):
+    roast = storage.get_roast(roast_id)
+    if roast is None:
+        raise HTTPException(status_code=404, detail="roast not found")
+    return roast
+
+
+@app.delete("/roasts/{roast_id}")
+async def roasts_delete(roast_id: int):
+    if not storage.delete_roast(roast_id):
+        raise HTTPException(status_code=404, detail="roast not found")
+    return {"ok": True}
 
 
 @app.websocket("/ws")

@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { RoastPoint, RoastEvent } from "./types";
+import { API } from "./api";
 
-// In dev the UI is served by Vite (:5173) while the adapter runs on :8000.
-// In the bundled app the adapter serves the UI too, so use the current origin.
-const API = import.meta.env.DEV ? "http://localhost:8000" : window.location.origin;
 const WS =
   (import.meta.env.DEV
     ? "ws://localhost:8000"
@@ -16,6 +14,8 @@ export function useRoastSocket() {
   const [history, setHistory] = useState<RoastPoint[]>([]);
   const [events, setEvents] = useState<RoastEvent[]>([]);
   const [live, setLive] = useState<RoastPoint | null>(null);
+  // Bumps each time a roast is saved, so the history view can refresh.
+  const [lastSavedId, setLastSavedId] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -58,6 +58,7 @@ export function useRoastSocket() {
             break;
           case "roast_stopped":
             setRoasting(false);
+            if (msg.roast_id != null) setLastSavedId(msg.roast_id);
             break;
         }
       };
@@ -80,5 +81,5 @@ export function useRoastSocket() {
       body: JSON.stringify({ type, label }),
     });
 
-  return { connected, roasting, history, events, live, start, stop, markEvent };
+  return { connected, roasting, history, events, live, lastSavedId, start, stop, markEvent };
 }
