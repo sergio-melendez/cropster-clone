@@ -145,9 +145,20 @@ Delta/alerts are computed client-side from the existing `reading` stream — the
 WebSocket protocol is unchanged. New web files: `RoastProfiles.tsx`, `profile.ts`
 (target interpolation). Profile import needs `python-multipart`.
 
+Milestone 4 (done): import profiles from Cropster **PDF** roast reports. The PDF
+draws the bean curve as a vector path (~1 pt/s) and prints a coarse 30s table;
+`parse_cropster_pdf` (in `adapter/profile_import.py`, via `pypdf`) extracts the
+vector curve and calibrates pixel→time/°C using the table as ground truth — which
+also auto-selects the bean curve over the bottom-temp curve (lowest residual; the
+sample calibrates to <0.1°C). Falls back to the table points if no curve
+validates. `.pdf` is added to the `POST /profiles/import` dispatch; the importer
+also returns a suggested profile name (the PDF's `[PR-####] …` title). Needs
+`pypdf` (added to requirements + the PyInstaller spec).
+
 Note: Cropster `.crc` files are **AES-encrypted** (verified: entropy ~8.0, no
 plaintext) and can't be parsed without Cropster's key. `.crc` import is rejected
-with a clear message; revisit via the Cropster API or a real key.
+with a clear message; the **PDF export is the supported Cropster→app path**.
+Revisit `.crc` via the Cropster API or a real key.
 
 Not yet built (good next tasks):
 - CSV / Artisan-compatible *export* (we import; export is the inverse).

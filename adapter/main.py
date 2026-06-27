@@ -289,13 +289,15 @@ async def profiles_create(body: ProfileFromRoast):
 
 @app.post("/profiles/import")
 async def profiles_import(file: UploadFile = File(...)):
-    """Import a target profile from an open format (CSV or Artisan .alog)."""
+    """Import a target profile from an open format (Cropster PDF, CSV, Artisan)."""
     data = await file.read()
     try:
-        source, points, events = profile_import.parse_profile_file(file.filename or "", data)
+        source, points, events, suggested = profile_import.parse_profile_file(
+            file.filename or "", data
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    name = (file.filename or "imported").rsplit(".", 1)[0]
+    name = suggested or (file.filename or "imported").rsplit(".", 1)[0]
     profile_id = storage.save_profile(name=name, source=source, points=points, events=events)
     return {"ok": True, "id": profile_id, "source": source, "point_count": len(points)}
 
