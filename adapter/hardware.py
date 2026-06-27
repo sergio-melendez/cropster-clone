@@ -107,12 +107,14 @@ class PhidgetSource(TemperatureSource):
     def __init__(
         self,
         bt_channel: int = 0,
-        et_channel: int = 1,
+        et_channel: int | None = 1,
         bt_tc: str = "K",
         et_tc: str = "K",
         serial: int | None = None,
         data_interval_ms: int = 250,
     ) -> None:
+        # et_channel=None -> single-probe rig (Bean only). An unconnected
+        # thermocouple channel reads garbage, so we simply don't open one.
         try:
             from Phidget22.Devices.TemperatureSensor import TemperatureSensor
             from Phidget22.ThermocoupleType import ThermocoupleType
@@ -133,7 +135,7 @@ class PhidgetSource(TemperatureSource):
         self._data_interval_ms = data_interval_ms
 
         self._bt = self._open_channel(bt_channel, bt_tc)
-        self._et = self._open_channel(et_channel, et_tc)
+        self._et = self._open_channel(et_channel, et_tc) if et_channel is not None else None
 
     def _open_channel(self, channel: int, tc_type: str):
         tc = tc_type.upper()
@@ -154,7 +156,7 @@ class PhidgetSource(TemperatureSource):
     def read(self) -> dict:
         return {
             "bt": round(self._bt.getTemperature(), 1),
-            "et": round(self._et.getTemperature(), 1),
+            "et": round(self._et.getTemperature(), 1) if self._et is not None else None,
         }
 
     def close(self) -> None:

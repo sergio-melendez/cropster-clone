@@ -44,13 +44,22 @@ ROR_WINDOW_S = 30.0            # window for rate-of-rise (delta BT over time)
 # Tune which channel/type each probe is via env vars (defaults shown):
 #   BT_CHANNEL=0  BT_TC=K   ET_CHANNEL=1  ET_TC=K
 # Channels are the board ports 0-3; TC type is one of J/K/E/T.
+# Single-probe rig: set ET_CHANNEL=none (or off/-1/empty) to run Bean-only.
+
+
+def _optional_channel(name: str, default: str) -> int | None:
+    """Parse a channel env var; 'none'/'off'/'-1'/'' means no probe on that input."""
+    raw = os.getenv(name, default).strip().lower()
+    if raw in ("", "none", "off", "-1"):
+        return None
+    return int(raw)
 
 
 def make_source() -> TemperatureSource:
     if os.getenv("ROAST_SOURCE", "sim").lower() == "phidget":
         return PhidgetSource(
             bt_channel=int(os.getenv("BT_CHANNEL", "0")),
-            et_channel=int(os.getenv("ET_CHANNEL", "1")),
+            et_channel=_optional_channel("ET_CHANNEL", "1"),
             bt_tc=os.getenv("BT_TC", "K"),
             et_tc=os.getenv("ET_TC", "K"),
             serial=(int(os.environ["PHIDGET_SERIAL"]) if os.getenv("PHIDGET_SERIAL") else None),

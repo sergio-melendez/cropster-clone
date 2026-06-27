@@ -66,7 +66,17 @@ Open http://localhost:5173 — you should see "● adapter connected". Click
    ROAST_SOURCE=phidget BT_CHANNEL=0 BT_TC=K ET_CHANNEL=1 ET_TC=K \
      uvicorn main:app --port 8000
    ```
+   The board is auto-discovered by type, so `PHIDGET_SERIAL` is only needed when
+   more than one Phidget is attached.
+
+   **Single-probe (Bean only) rig:** set `ET_CHANNEL=none` (also accepts
+   `off`/`-1`/empty). The adapter then opens only the BT channel; Env reads as
+   "--" and the ET line is omitted. Example: a probe on channel 3, no ET:
+   ```bash
+   ROAST_SOURCE=phidget BT_CHANNEL=3 BT_TC=K ET_CHANNEL=none \
+     uvicorn main:app --port 8000
+   ```
 
 Env vars (defaults): `ROAST_SOURCE=sim`, `BT_CHANNEL=0`, `BT_TC=K`,
-`ET_CHANNEL=1`, `ET_TC=K`, `PHIDGET_SERIAL` (optional). See `adapter/README.md`
-for the full table.
+`ET_CHANNEL=1` (`none` to disable), `ET_TC=K`, `PHIDGET_SERIAL` (optional). See
+`adapter/README.md` for the full table.

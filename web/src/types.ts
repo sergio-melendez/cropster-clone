@@ -1,8 +1,8 @@
 export interface RoastPoint {
-  t: number;        // seconds since charge
-  bt: number;       // bean temp (C)
-  et: number;       // environmental temp (C)
-  ror: number;      // rate of rise (C/min)
+  t: number;            // seconds since charge
+  bt: number;           // bean temp (C)
+  et: number | null;    // environmental temp (C); null on a single-probe (BT-only) rig
+  ror: number;          // rate of rise (C/min)
 }
 
 export interface RoastEvent {

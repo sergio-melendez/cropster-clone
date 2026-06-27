@@ -73,7 +73,7 @@ export default function RoastChart({
         />
         <Tooltip
           labelFormatter={(v) => `Time ${fmtTime(Number(v))}`}
-          formatter={(value: number, name: string) => [value.toFixed(1), name]}
+          formatter={(value, name) => [typeof value === "number" ? value.toFixed(1) : "--", name]}
         />
         <Legend />
         {target && target.length > 0 && (

@@ -143,7 +143,7 @@ export default function App() {
       >
         <Stat label="Time" value={fmtTime(roasting ? live?.t : 0)} color="#111827" />
         <Stat label="Bean" value={live ? `${live.bt.toFixed(1)}°` : "--"} color="#dc2626" />
-        <Stat label="Env" value={live ? `${live.et.toFixed(1)}°` : "--"} color="#ea580c" />
+        <Stat label="Env" value={live && live.et != null ? `${live.et.toFixed(1)}°` : "--"} color="#ea580c" />
         <Stat label="RoR" value={live ? `${live.ror.toFixed(1)}` : "--"} color="#16a34a" />
         {activeProfile && (
           <Stat

@@ -23,7 +23,7 @@ ROAST_SOURCE=phidget BT_CHANNEL=0 BT_TC=K ET_CHANNEL=1 ET_TC=K \
 |------------------|---------|------------------------------------------|
 | `ROAST_SOURCE`   | `sim`   | `sim` or `phidget`                       |
 | `BT_CHANNEL`     | `0`     | board channel (0-3) for Bean Temp        |
-| `ET_CHANNEL`     | `1`     | board channel (0-3) for Env Temp         |
+| `ET_CHANNEL`     | `1`     | board channel (0-3) for Env Temp; `none` for a Bean-only rig |
 | `BT_TC` / `ET_TC`| `K`     | thermocouple type per probe: J/K/E/T     |
 | `PHIDGET_SERIAL` | unset   | pin a specific board by serial number    |
 
