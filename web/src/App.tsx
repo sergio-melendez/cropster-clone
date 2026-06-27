@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { useRoastSocket } from "./useRoastSocket";
 import RoastChart from "./RoastChart";
+import RoastHistory from "./RoastHistory";
 
 const EVENTS: { type: string; label: string }[] = [
   { type: "TP", label: "Turning Point" },
@@ -29,7 +31,9 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
 }
 
 export default function App() {
-  const { connected, roasting, history, events, live, start, stop, markEvent } = useRoastSocket();
+  const { connected, roasting, history, events, live, lastSavedId, start, stop, markEvent } =
+    useRoastSocket();
+  const [view, setView] = useState<"live" | "history">("live");
 
   const btn: React.CSSProperties = {
     padding: "8px 16px",
@@ -66,8 +70,30 @@ export default function App() {
           {connected ? "● adapter connected" : "○ adapter offline"}
         </span>
         <span style={{ fontSize: 12, color: "#6b7280" }}>(simulated source)</span>
+
+        <nav style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+          {(["live", "history"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              style={{
+                ...btn,
+                textTransform: "capitalize",
+                background: view === v ? "#111827" : "#fff",
+                color: view === v ? "#fff" : "#374151",
+                borderColor: view === v ? "#111827" : "#d1d5db",
+              }}
+            >
+              {v}
+            </button>
+          ))}
+        </nav>
       </header>
 
+      {view === "history" ? (
+        <RoastHistory refreshKey={lastSavedId} />
+      ) : (
+      <>
       <div
         style={{
           display: "flex",
@@ -128,6 +154,8 @@ export default function App() {
             </span>
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   );

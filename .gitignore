@@ -4,6 +4,12 @@ __pycache__/
 .venv/
 venv/
 
+# Saved roasts DB (runtime data, created by the adapter)
+*.db
+
+# Local preview/launch config (machine-specific paths)
+.claude/
+
 # Node
 node_modules/
 dist/
