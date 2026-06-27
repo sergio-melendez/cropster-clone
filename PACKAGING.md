@@ -60,29 +60,33 @@ On the target Windows laptop, before first run:
    / libphidget22 installer).
 2. Plug in the Phidget 1048 by USB; confirm it shows up in the Control Panel.
 
-## Shipping a build that uses the real board by default
+## Configuring the board (config file next to the exe)
 
-The exe defaults to the **simulator**. To make a build talk to the 1048 on
-launch, put a small `RoastMonitor.bat` next to the exe:
+The exe defaults to the **simulator**. To make it talk to the 1048, drop a
+`roastmonitor.env` file **next to the exe** — `run_app.py` reads it on startup
+(`adapter/run_app.py`). On first launch with no config, the app writes a
+commented template there for you to edit.
 
-```bat
-@echo off
-set ROAST_SOURCE=phidget
-set BT_CHANNEL=0
-set BT_TC=K
-set ET_CHANNEL=1
-set ET_TC=J
-RoastMonitor.exe
+```ini
+# roastmonitor.env  — edit, save, restart RoastMonitor
+ROAST_SOURCE=phidget
+BT_CHANNEL=3
+BT_TC=K
+ET_CHANNEL=none      # single-probe (Bean-only) rig; or a channel 0-3
 ```
 
-The roaster runs the `.bat` instead of the exe directly. (Adjust channels/types
-to however the probes are wired — see the env-var table in `adapter/README.md`.)
+The roaster just double-clicks `RoastMonitor.exe` as usual — no `.bat`, no
+command line. Real environment variables still override the file if set. (See
+the env-var table in `adapter/README.md`; a committed `roastmonitor.env.example`
+documents the keys.)
 
 ## Target-laptop experience, end to end
 
 1. Install the Phidget driver (once).
-2. Copy over `RoastMonitor.exe` (+ optional `.bat`).
-3. Double-click → browser opens to the roast monitor → **Start Roast**.
+2. Copy over `RoastMonitor.exe`.
+3. Double-click once → it writes `roastmonitor.env`; edit that to point at the
+   board (e.g. `ROAST_SOURCE=phidget`, `BT_CHANNEL=3`, `ET_CHANNEL=none`).
+4. Double-click again → browser opens to the roast monitor → **Start Roast**.
 
 ## Notes / future polish
 

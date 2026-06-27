@@ -7,6 +7,10 @@ venv/
 # Saved roasts DB (runtime data, created by the adapter)
 *.db
 
+# Per-machine bundled-app config (written next to the exe/run_app at runtime).
+# The committed roastmonitor.env.example documents the format.
+roastmonitor.env
+
 # Local Claude config (machine-specific paths, personal permissions)
 .claude/
 
