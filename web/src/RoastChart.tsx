@@ -9,7 +9,8 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
-import type { RoastPoint, RoastEvent } from "./types";
+import type { ProfilePoint, RoastPoint, RoastEvent } from "./types";
+import { interpolateTarget } from "./profile";
 
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60);
@@ -17,16 +18,38 @@ function fmtTime(s: number): string {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
+/**
+ * Merge the live/saved curve with an optional target profile into one dataset.
+ * Each history point gets a `target_bt` (interpolated at its t); any target
+ * points beyond the last history point are appended so the full target curve
+ * shows ahead of the live curve.
+ */
+function buildData(history: RoastPoint[], target?: ProfilePoint[]): Array<Record<string, number | null>> {
+  if (!target || target.length === 0) return history as unknown as Array<Record<string, number | null>>;
+  const lastT = history.length ? history[history.length - 1].t : -Infinity;
+  const merged: Array<Record<string, number | null>> = history.map((p) => ({
+    ...p,
+    target_bt: interpolateTarget(target, p.t),
+  }));
+  for (const tp of target) {
+    if (tp.t > lastT) merged.push({ t: tp.t, target_bt: tp.bt });
+  }
+  return merged;
+}
+
 export default function RoastChart({
   history,
   events,
+  target,
 }: {
   history: RoastPoint[];
   events: RoastEvent[];
+  target?: ProfilePoint[];
 }) {
+  const data = buildData(history, target);
   return (
     <ResponsiveContainer width="100%" height={460}>
-      <ComposedChart data={history} margin={{ top: 10, right: 50, bottom: 10, left: 0 }}>
+      <ComposedChart data={data} margin={{ top: 10, right: 50, bottom: 10, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
         <XAxis
           dataKey="t"
@@ -53,6 +76,20 @@ export default function RoastChart({
           formatter={(value: number, name: string) => [value.toFixed(1), name]}
         />
         <Legend />
+        {target && target.length > 0 && (
+          <Line
+            yAxisId="temp"
+            type="monotone"
+            dataKey="target_bt"
+            name="Target"
+            stroke="#9ca3af"
+            dot={false}
+            isAnimationActive={false}
+            strokeWidth={2}
+            strokeDasharray="6 3"
+            connectNulls
+          />
+        )}
         <Line
           yAxisId="temp"
           type="monotone"

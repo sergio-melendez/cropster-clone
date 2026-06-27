@@ -32,6 +32,17 @@ CREATE TABLE IF NOT EXISTS roasts (
     points_json TEXT NOT NULL,   -- [{t, bt, et, ror}, ...]
     events_json TEXT NOT NULL    -- [{t, type, label}, ...]
 );
+
+CREATE TABLE IF NOT EXISTS profiles (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    created_at  REAL NOT NULL,   -- wall-clock epoch seconds when saved
+    source      TEXT NOT NULL,   -- 'roast' | 'csv' | 'artisan'
+    duration_s  REAL NOT NULL,   -- last point's t, for the list view
+    notes       TEXT,
+    points_json TEXT NOT NULL,   -- [{t, bt}, ...] target bean-temp curve
+    events_json TEXT NOT NULL    -- [{t, type, label}, ...] optional milestones
+);
 """
 
 
@@ -115,4 +126,84 @@ def delete_roast(roast_id: int) -> bool:
     """Delete one roast. Returns True if a row was removed."""
     with _connect() as conn:
         cur = conn.execute("DELETE FROM roasts WHERE id = ?", (roast_id,))
+        return cur.rowcount > 0
+
+
+# ---- profiles (target curves to roast against) -------------------------------
+# A profile is a target bean-temp curve: [{t, bt}, ...]. It can come from one of
+# our own saved roasts, or be imported from an open format (CSV / Artisan).
+
+
+def save_profile(
+    name: str,
+    source: str,
+    points: list[dict],
+    events: list[dict] | None = None,
+    notes: str | None = None,
+) -> int:
+    """Persist one target profile and return its new id."""
+    events = events or []
+    duration = points[-1]["t"] if points else 0.0
+    with _connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO profiles "
+            "(name, created_at, source, duration_s, notes, points_json, events_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                name,
+                time.time(),
+                source,
+                duration,
+                notes,
+                json.dumps(points),
+                json.dumps(events),
+            ),
+        )
+        return int(cur.lastrowid)
+
+
+def list_profiles() -> list[dict]:
+    """Return profile summaries (no curve), newest first."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, name, created_at, source, duration_s, points_json "
+            "FROM profiles ORDER BY created_at DESC"
+        ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "created_at": r["created_at"],
+            "source": r["source"],
+            "duration_s": r["duration_s"],
+            "point_count": len(json.loads(r["points_json"])),
+        }
+        for r in rows
+    ]
+
+
+def get_profile(profile_id: int) -> dict | None:
+    """Return one profile in full (curve + events), or None if it doesn't exist."""
+    with _connect() as conn:
+        r = conn.execute(
+            "SELECT * FROM profiles WHERE id = ?", (profile_id,)
+        ).fetchone()
+    if r is None:
+        return None
+    return {
+        "id": r["id"],
+        "name": r["name"],
+        "created_at": r["created_at"],
+        "source": r["source"],
+        "duration_s": r["duration_s"],
+        "notes": r["notes"],
+        "points": json.loads(r["points_json"]),
+        "events": json.loads(r["events_json"]),
+    }
+
+
+def delete_profile(profile_id: int) -> bool:
+    """Delete one profile. Returns True if a row was removed."""
+    with _connect() as conn:
+        cur = conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
         return cur.rowcount > 0

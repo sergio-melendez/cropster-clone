@@ -133,8 +133,23 @@ duration/peak-BT for the list). New REST routes: `GET /roasts` (summaries),
 file is `adapter/roasts.db` (gitignored). The web UI gains a Live/History tab
 toggle (`web/src/RoastHistory.tsx`); the review view reuses `RoastChart`.
 
+Milestone 3 (done): roast profiles + roast-over-target. A profile is a target
+bean-temp curve (`[{t, bt}]`) stored in a `profiles` table. Sources: save one
+of our own roasts as a profile (`POST /profiles`), or import an open format
+(`POST /profiles/import` — CSV or Artisan `.alog`; parsers isolated in
+`adapter/profile_import.py`). Routes also include `GET /profiles`,
+`GET /profiles/{id}`, `DELETE /profiles/{id}`. The Live view gains a "Roast
+against" selector that overlays the target curve (`RoastChart` `target` prop),
+plus a live Δ-to-target readout and a drift alert (`DELTA_ALERT_C`, default 5°C).
+Delta/alerts are computed client-side from the existing `reading` stream — the
+WebSocket protocol is unchanged. New web files: `RoastProfiles.tsx`, `profile.ts`
+(target interpolation). Profile import needs `python-multipart`.
+
+Note: Cropster `.crc` files are **AES-encrypted** (verified: entropy ~8.0, no
+plaintext) and can't be parsed without Cropster's key. `.crc` import is rejected
+with a clear message; revisit via the Cropster API or a real key.
+
 Not yet built (good next tasks):
-- Roast profiles: overlay a target curve and roast-to-template (core Cropster
-  feature).
-- CSV / Artisan-compatible export.
+- CSV / Artisan-compatible *export* (we import; export is the inverse).
+- Drift-alert thresholds as user settings; server-side active-profile state.
 - Tests (pytest + vitest) and CI.
