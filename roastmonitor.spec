@@ -10,8 +10,14 @@ datas = [("web/dist", "web_dist")]   # the built UI, unpacked to _MEIPASS/web_di
 binaries = []
 hiddenimports = []
 
-# uvicorn + the Phidget Python wrapper load submodules dynamically; pull them all.
-for pkg in ("uvicorn", "Phidget22", "pypdf"):
+# Packages whose submodules load dynamically / lazily, so PyInstaller's static
+# analysis can miss them — pull each in whole:
+#   uvicorn    - loads protocol/loop submodules by name
+#   Phidget22  - the Phidget Python wrapper
+#   pypdf      - Cropster PDF profile import
+#   multipart  - python-multipart; starlette imports it inside a try/except for
+#                file uploads (profile import), which PyInstaller often misses.
+for pkg in ("uvicorn", "Phidget22", "pypdf", "multipart"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
