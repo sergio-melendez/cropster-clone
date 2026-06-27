@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import RoastChart from "./RoastChart";
-import { deleteRoast, getRoast, listRoasts } from "./api";
+import { createProfileFromRoast, deleteRoast, getRoast, listRoasts } from "./api";
 import type { SavedRoast, SavedRoastMeta } from "./types";
 
 function fmtDuration(s: number): string {
@@ -54,6 +54,17 @@ export default function RoastHistory({ refreshKey }: { refreshKey: number | null
       await deleteRoast(id);
       if (selectedId === id) setSelectedId(null);
       await refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const onSaveAsProfile = async (roast: SavedRoast) => {
+    const name = prompt("Name this profile:", `Roast #${roast.id}`);
+    if (!name) return;
+    try {
+      await createProfileFromRoast(name, roast.id);
+      alert(`Saved "${name}" as a profile. Pick it under "Roast against" on the Live tab.`);
     } catch (e) {
       setError(String(e));
     }
@@ -146,12 +157,30 @@ export default function RoastHistory({ refreshKey }: { refreshKey: number | null
       <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16 }}>
         {selected ? (
           <>
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>Roast #{selected.id}</div>
-              <div style={{ fontSize: 13, color: "#6b7280" }}>
-                {fmtDate(selected.started_at)} · {fmtDuration(selected.duration_s)} ·
-                peak {selected.max_bt != null ? `${selected.max_bt.toFixed(1)}°` : "--"}
+            <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>Roast #{selected.id}</div>
+                <div style={{ fontSize: 13, color: "#6b7280" }}>
+                  {fmtDate(selected.started_at)} · {fmtDuration(selected.duration_s)} ·
+                  peak {selected.max_bt != null ? `${selected.max_bt.toFixed(1)}°` : "--"}
+                </div>
               </div>
+              <button
+                onClick={() => onSaveAsProfile(selected)}
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #2563eb",
+                  background: "#fff",
+                  color: "#2563eb",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                ★ Save as profile
+              </button>
             </div>
             <RoastChart history={selected.history} events={selected.events} />
             {selected.events.length > 0 && (

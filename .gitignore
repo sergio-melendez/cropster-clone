@@ -7,7 +7,7 @@ venv/
 # Saved roasts DB (runtime data, created by the adapter)
 *.db
 
-# Local preview/launch config (machine-specific paths)
+# Local Claude config (machine-specific paths, personal permissions)
 .claude/
 
 # Node

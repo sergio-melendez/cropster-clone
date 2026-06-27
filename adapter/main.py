@@ -22,13 +22,16 @@ from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import profile_import
 import storage
 from hardware import PhidgetSource, SimulatedSource, TemperatureSource
+
+PROFILE_MAX_POINTS = 300       # downsample a roast's curve to at most this many target points
 
 SAMPLE_HZ = 2.0                 # readings per second
 ROR_WINDOW_S = 30.0            # window for rate-of-rise (delta BT over time)
@@ -232,6 +235,74 @@ async def roasts_get(roast_id: int):
 async def roasts_delete(roast_id: int):
     if not storage.delete_roast(roast_id):
         raise HTTPException(status_code=404, detail="roast not found")
+    return {"ok": True}
+
+
+# ---- roast profiles (target curves to roast against) -------------------------
+class ProfileFromRoast(BaseModel):
+    name: str
+    roast_id: int
+    notes: str | None = None
+
+
+def _downsample(points: list[dict], max_points: int) -> list[dict]:
+    """Evenly thin a point list to at most max_points, keeping first and last."""
+    n = len(points)
+    if n <= max_points:
+        return points
+    step = n / max_points
+    idxs = sorted({int(i * step) for i in range(max_points)} | {n - 1})
+    return [points[i] for i in idxs]
+
+
+@app.get("/profiles")
+async def profiles_list():
+    return {"profiles": storage.list_profiles()}
+
+
+@app.post("/profiles")
+async def profiles_create(body: ProfileFromRoast):
+    """Create a target profile from one of our own saved roasts."""
+    roast = storage.get_roast(body.roast_id)
+    if roast is None:
+        raise HTTPException(status_code=404, detail="roast not found")
+    points = [{"t": p["t"], "bt": p["bt"]} for p in roast["history"]]
+    points = _downsample(points, PROFILE_MAX_POINTS)
+    profile_id = storage.save_profile(
+        name=body.name,
+        source="roast",
+        points=points,
+        events=roast["events"],
+        notes=body.notes,
+    )
+    return {"ok": True, "id": profile_id}
+
+
+@app.post("/profiles/import")
+async def profiles_import(file: UploadFile = File(...)):
+    """Import a target profile from an open format (CSV or Artisan .alog)."""
+    data = await file.read()
+    try:
+        source, points, events = profile_import.parse_profile_file(file.filename or "", data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    name = (file.filename or "imported").rsplit(".", 1)[0]
+    profile_id = storage.save_profile(name=name, source=source, points=points, events=events)
+    return {"ok": True, "id": profile_id, "source": source, "point_count": len(points)}
+
+
+@app.get("/profiles/{profile_id}")
+async def profiles_get(profile_id: int):
+    profile = storage.get_profile(profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="profile not found")
+    return profile
+
+
+@app.delete("/profiles/{profile_id}")
+async def profiles_delete(profile_id: int):
+    if not storage.delete_profile(profile_id):
+        raise HTTPException(status_code=404, detail="profile not found")
     return {"ok": True}
 
 

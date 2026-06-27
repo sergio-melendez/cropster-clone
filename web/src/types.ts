@@ -27,6 +27,29 @@ export interface SavedRoast extends Omit<SavedRoastMeta, "event_count"> {
   events: RoastEvent[];
 }
 
+// A point on a target profile curve (bean temp over time).
+export interface ProfilePoint {
+  t: number;   // seconds since charge
+  bt: number;  // target bean temp (C)
+}
+
+// Summary row for the profiles list (no curve).
+export interface ProfileMeta {
+  id: number;
+  name: string;
+  created_at: number;   // epoch seconds when saved
+  source: string;       // 'roast' | 'csv' | 'artisan'
+  duration_s: number;
+  point_count: number;
+}
+
+// A full target profile, curve + optional milestone events.
+export interface Profile extends Omit<ProfileMeta, "point_count"> {
+  notes: string | null;
+  points: ProfilePoint[];
+  events: RoastEvent[];
+}
+
 export type WsMessage =
   | ({ type: "reading"; roasting: boolean } & Partial<RoastPoint>)
   | { type: "snapshot"; history: RoastPoint[]; events: RoastEvent[]; roasting: boolean }
