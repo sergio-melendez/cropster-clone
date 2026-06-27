@@ -4,18 +4,24 @@ A web-based coffee roast monitor, structured like Cropster's Roasting
 Intelligence: a small **local hardware adapter** plus a **web UI**.
 
 ```
- Probes ──> Phidget board ──USB──> Phidget driver
-                                        │
+ Thermocouples ──> Phidget 1048 ──mini-USB──> Phidget driver
+                                                   │
                             adapter/ (Python, FastAPI)   <-- hardware lives here, fully encapsulated
-                                        │  WebSocket (localhost:8000)
-                                        ▼
+                                                   │  WebSocket (localhost:8000)
+                                                   ▼
                             web/ (React + Vite + TS)     <-- live roast curve, controls
 ```
 
-The hardware is encapsulated behind a `TemperatureSource` interface
-(`adapter/hardware.py`). Right now it runs on `SimulatedSource` (a realistic
-fake roast). When your Phidget board arrives, fill in `PhidgetSource` and change
-one line in `adapter/main.py` — the web app does not change at all.
+Hardware: a **Phidget 1048** (4-input thermocouple board, mini-USB) — what
+Cropster calls a "Cropster Connector." It's encapsulated behind a
+`TemperatureSource` interface (`adapter/hardware.py`) with two implementations:
+`SimulatedSource` (a realistic fake roast, the default) and `PhidgetSource` (the
+real board). You switch between them with an env var — no code change, and the
+web app never changes.
+
+> New here? Read **CLAUDE.md** for the full architecture, commands, and
+> conventions — it's written so an AI agent (or a new dev) can get productive in
+> one read.
 
 ## Run it (two terminals)
 
@@ -49,11 +55,18 @@ Open http://localhost:5173 — you should see "● adapter connected". Click
 - Multiple machines, batch/green-coffee metadata
 - Export (CSV / Artisan-compatible)
 
-## When the board arrives
+## Using the real Phidget 1048
 
-1. `pip install Phidget22` and install the Phidget driver from phidgets.com.
-2. In `adapter/hardware.py`, the `PhidgetSource` skeleton is ready — set your
-   `bt_channel`, `et_channel`, thermocouple type (J/K/E/T), and serial/hub port.
-3. In `adapter/main.py`, swap `source = SimulatedSource()` for
-   `source = PhidgetSource(...)`.
-```
+1. Install the Phidget driver (libphidget22) from phidgets.com and the Python
+   library: `pip install Phidget22`.
+2. Wire each probe to a board channel (0-3); note which is Bean Temp (BT) and
+   which is Env Temp (ET), plus each probe's thermocouple type.
+3. Start the adapter pointed at the board (no code change needed):
+   ```bash
+   ROAST_SOURCE=phidget BT_CHANNEL=0 BT_TC=K ET_CHANNEL=1 ET_TC=K \
+     uvicorn main:app --port 8000
+   ```
+
+Env vars (defaults): `ROAST_SOURCE=sim`, `BT_CHANNEL=0`, `BT_TC=K`,
+`ET_CHANNEL=1`, `ET_TC=K`, `PHIDGET_SERIAL` (optional). See `adapter/README.md`
+for the full table.

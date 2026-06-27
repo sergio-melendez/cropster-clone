@@ -87,23 +87,31 @@ class SimulatedSource(TemperatureSource):
 
 
 class PhidgetSource(TemperatureSource):
-    """Drop-in skeleton for a real Phidget board.
+    """Real source for the **Phidget 1048** (PhidgetTemperatureSensor 4-Input).
 
-    Requires the Phidget22 Python library:  pip install Phidget22
-    (and the Phidget driver / libphidget22 installed on the machine).
+    The 1048 connects by mini-USB directly to the computer (no VINT Hub). It
+    exposes 4 thermocouple channels (0-3); each channel's type (J/K/E/T) is set
+    independently in software, so your Bean and Env probes can differ.
 
-    Fill in the channel/serial/thermocouple details once you know your board
-    model (e.g. Phidget 1048 direct-USB, or a VINT Hub + TMP1101 module).
-    The two channels below map to your BT and ET probes.
+    Requires:
+      - the Phidget driver / libphidget22 installed (from phidgets.com)
+      - the Python library:  pip install Phidget22
+
+    Args:
+      bt_channel / et_channel : which board channel (0-3) each probe is wired to
+      bt_tc / et_tc           : thermocouple type for each probe ("J","K","E","T")
+      serial                  : board serial number, or None to grab any 1048
+      data_interval_ms        : how often the board samples
     """
 
     def __init__(
         self,
         bt_channel: int = 0,
         et_channel: int = 1,
-        serial: int | None = None,   # board serial number, or None for "any"
-        hub_port: int | None = None,  # set if using a VINT Hub
-        tc_type: str = "K",          # J, K, E, or T
+        bt_tc: str = "K",
+        et_tc: str = "K",
+        serial: int | None = None,
+        data_interval_ms: int = 250,
     ) -> None:
         try:
             from Phidget22.Devices.TemperatureSensor import TemperatureSensor
@@ -114,29 +122,34 @@ class PhidgetSource(TemperatureSource):
                 "Also install the Phidget driver from phidgets.com."
             ) from e
 
-        tc_map = {
+        self._tc_map = {
             "J": ThermocoupleType.THERMOCOUPLE_TYPE_J,
             "K": ThermocoupleType.THERMOCOUPLE_TYPE_K,
             "E": ThermocoupleType.THERMOCOUPLE_TYPE_E,
             "T": ThermocoupleType.THERMOCOUPLE_TYPE_T,
         }
+        self._TemperatureSensor = TemperatureSensor
+        self._serial = serial
+        self._data_interval_ms = data_interval_ms
 
-        def _make(channel: int) -> "TemperatureSensor":
-            s = TemperatureSensor()
-            if serial is not None:
-                s.setDeviceSerialNumber(serial)
-            if hub_port is not None:
-                s.setHubPort(hub_port)
-            s.setChannel(channel)
-            s.openWaitForAttachment(5000)  # ms
-            try:
-                s.setThermocoupleType(tc_map[tc_type.upper()])
-            except Exception:
-                pass  # RTD sensors won't accept this; ignore.
-            return s
+        self._bt = self._open_channel(bt_channel, bt_tc)
+        self._et = self._open_channel(et_channel, et_tc)
 
-        self._bt = _make(bt_channel)
-        self._et = _make(et_channel)
+    def _open_channel(self, channel: int, tc_type: str):
+        tc = tc_type.upper()
+        if tc not in self._tc_map:
+            raise ValueError(f"Unknown thermocouple type {tc_type!r}; use J/K/E/T")
+        s = self._TemperatureSensor()
+        if self._serial is not None:
+            s.setDeviceSerialNumber(self._serial)
+        s.setChannel(channel)
+        s.openWaitForAttachment(5000)  # ms; raises if the board isn't found
+        s.setThermocoupleType(self._tc_map[tc])
+        try:
+            s.setDataInterval(self._data_interval_ms)
+        except Exception:
+            pass  # not all firmware honors this; safe to ignore
+        return s
 
     def read(self) -> dict:
         return {

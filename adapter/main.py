@@ -15,6 +15,7 @@ Swap SimulatedSource -> PhidgetSource (see hardware.py) when the board arrives.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from collections import deque
 from contextlib import asynccontextmanager
@@ -23,15 +24,34 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from hardware import SimulatedSource, TemperatureSource
+from hardware import PhidgetSource, SimulatedSource, TemperatureSource
 
 SAMPLE_HZ = 2.0                 # readings per second
 ROR_WINDOW_S = 30.0            # window for rate-of-rise (delta BT over time)
 
-# ---- choose your source here -------------------------------------------------
-source: TemperatureSource = SimulatedSource()
-# from hardware import PhidgetSource
-# source = PhidgetSource(bt_channel=0, et_channel=1, tc_type="K")
+# ---- source selection --------------------------------------------------------
+# Default is the simulator. To use the real Phidget 1048, start the adapter with:
+#
+#   ROAST_SOURCE=phidget uvicorn main:app --port 8000
+#
+# Tune which channel/type each probe is via env vars (defaults shown):
+#   BT_CHANNEL=0  BT_TC=K   ET_CHANNEL=1  ET_TC=K
+# Channels are the board ports 0-3; TC type is one of J/K/E/T.
+
+
+def make_source() -> TemperatureSource:
+    if os.getenv("ROAST_SOURCE", "sim").lower() == "phidget":
+        return PhidgetSource(
+            bt_channel=int(os.getenv("BT_CHANNEL", "0")),
+            et_channel=int(os.getenv("ET_CHANNEL", "1")),
+            bt_tc=os.getenv("BT_TC", "K"),
+            et_tc=os.getenv("ET_TC", "K"),
+            serial=(int(os.environ["PHIDGET_SERIAL"]) if os.getenv("PHIDGET_SERIAL") else None),
+        )
+    return SimulatedSource()
+
+
+source: TemperatureSource = make_source()
 # -----------------------------------------------------------------------------
 
 
