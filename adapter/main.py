@@ -16,12 +16,15 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import time
 from collections import deque
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from hardware import PhidgetSource, SimulatedSource, TemperatureSource
@@ -207,3 +210,27 @@ async def ws_endpoint(ws: WebSocket):
             await ws.receive_text()  # keepalive / ignore client messages
     except WebSocketDisconnect:
         manager.disconnect(ws)
+
+
+# ---- serve the built web UI --------------------------------------------------
+# When packaged with PyInstaller the build is unpacked next to the exe at
+# `web_dist`; in a normal checkout it lives at ../web/dist. If neither exists
+# (e.g. running the adapter before `npm run build`), the API still works and the
+# UI is simply served by Vite during dev.
+def _web_dist() -> Path | None:
+    bundle = getattr(sys, "_MEIPASS", None)
+    candidates = []
+    if bundle:
+        candidates.append(Path(bundle) / "web_dist")
+    here = Path(__file__).resolve().parent
+    candidates.append(here.parent / "web" / "dist")
+    for c in candidates:
+        if c.is_dir():
+            return c
+    return None
+
+
+_dist = _web_dist()
+if _dist is not None:
+    # Mounted LAST so it never shadows the API/WS routes above.
+    app.mount("/", StaticFiles(directory=str(_dist), html=True), name="web")

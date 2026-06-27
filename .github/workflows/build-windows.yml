@@ -1,0 +1,46 @@
+name: Build Windows exe
+
+# Runs on a Windows CI runner (you develop on Mac; this produces the .exe).
+# Trigger manually from the Actions tab, or by pushing a version tag like v0.1.0.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. Build the web UI -> web/dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build web UI
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      # 2. Install Python deps + packaging tools
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r adapter/requirements.txt
+          pip install pyinstaller Phidget22
+
+      # 3. Package the single-file exe
+      - name: Build exe
+        run: pyinstaller roastmonitor.spec --noconfirm
+
+      # 4. Publish the artifact (download it from the run's "Artifacts" section)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RoastMonitor-windows
+          path: dist/RoastMonitor.exe
+          if-no-files-found: error

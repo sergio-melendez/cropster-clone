@@ -10,6 +10,9 @@ dist/
 *.tsbuildinfo
 vite.config.ts.timestamp-*.mjs
 
+# PyInstaller build output
+build/
+
 # OS / editor
 .DS_Store
 .idea/

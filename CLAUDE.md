@@ -46,6 +46,8 @@ You switch sources with an env var (see below) — no code change needed.
 adapter/
   hardware.py        TemperatureSource interface + SimulatedSource + PhidgetSource
   main.py            FastAPI app: REST control + /ws WebSocket stream + sampler loop
+                     (also mounts the built web UI for the packaged exe)
+  run_app.py         bundled-app entry: starts uvicorn + opens the browser
   requirements.txt
 web/
   src/
@@ -54,7 +56,11 @@ web/
     useRoastSocket.ts WebSocket client hook + REST calls; auto-reconnects
     types.ts         shared TS types
   package.json, vite.config.ts, tsconfig.json, index.html
+roastmonitor.spec    PyInstaller spec (single-file Windows .exe)
+build_windows.ps1    local Windows build script
+.github/workflows/build-windows.yml   CI build on a Windows runner
 README.md            human-facing quickstart
+PACKAGING.md         how to ship the Windows .exe
 CLAUDE.md            this file
 ```
 
@@ -78,6 +84,11 @@ npm run build                                 # type-check (tsc -b) + production
 There is no test suite yet. The "test" today is: start both, open the UI, click
 **Start Roast**, confirm the live curve animates and events mark. When you add
 logic, add real tests (pytest for the adapter, vitest for the web).
+
+**Packaging (Windows single-file exe):** `npm run build` in web/, then
+`pyinstaller roastmonitor.spec` produces `dist/RoastMonitor.exe`. PyInstaller
+can't cross-compile, so the exe is built on Windows — via the GitHub Actions
+workflow (recommended) or `build_windows.ps1`. Full details in `PACKAGING.md`.
 
 ## Using the real Phidget 1048
 

@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { RoastPoint, RoastEvent } from "./types";
 
-const API = "http://localhost:8000";
-const WS = "ws://localhost:8000/ws";
+// In dev the UI is served by Vite (:5173) while the adapter runs on :8000.
+// In the bundled app the adapter serves the UI too, so use the current origin.
+const API = import.meta.env.DEV ? "http://localhost:8000" : window.location.origin;
+const WS =
+  (import.meta.env.DEV
+    ? "ws://localhost:8000"
+    : (window.location.protocol === "https:" ? "wss://" : "ws://") +
+      window.location.host) + "/ws";
 
 export function useRoastSocket() {
   const [connected, setConnected] = useState(false);
