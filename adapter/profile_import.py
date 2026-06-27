@@ -16,8 +16,10 @@ be parsed without Cropster's private key (see the project plan/roadmap).
 from __future__ import annotations
 
 import ast
+import bisect
 import csv
 import io
+import re
 
 
 def _parse_time(value: str) -> float | None:
@@ -157,22 +159,174 @@ def _normalize(points: list[dict]) -> list[dict]:
     return points
 
 
-def parse_profile_file(filename: str, data: bytes) -> tuple[str, list[dict], list[dict]]:
-    """Dispatch on file extension. Returns (source, points, events).
+# ---- Cropster PDF roast report ----------------------------------------------
+# Cropster's exported PDF draws the bean-temp curve as a VECTOR path (~1 point/
+# second) and also prints a coarse "30-second measurements" table. We extract the
+# high-resolution vector curve and calibrate it (pixel space -> time/°C) using the
+# table as ground truth — which also picks the bean curve out from the bottom-temp
+# curve (only the bean curve's mapped values match the table). If the curve can't
+# be found/validated, we fall back to the table points so the import still works.
 
-    `source` is one of 'csv' | 'artisan' for storage. Raises ValueError on an
-    unsupported extension (notably `.crc`, which is encrypted) or a parse failure.
+_CAL_TOLERANCE_C = 3.0          # max mean residual (°C) to trust the vector curve
+_CROPSTER_MAX_POINTS = 800      # cap stored target points (a ~13min roast is ~760)
+
+
+def _interp(xs: list[float], ys: list[float], x: float) -> float:
+    if x <= xs[0]:
+        return ys[0]
+    if x >= xs[-1]:
+        return ys[-1]
+    i = bisect.bisect_left(xs, x)
+    x0, x1, y0, y1 = xs[i - 1], xs[i], ys[i - 1], ys[i]
+    return y0 if x1 == x0 else y0 + (y1 - y0) * ((x - x0) / (x1 - x0))
+
+
+def _cropster_table(text: str) -> list[tuple[float, float]]:
+    """(seconds, bean_temp) pairs from the printed table + milestone lines."""
+    pts = set()
+    for m in re.finditer(r"(\d+):(\d{2})\s+(\d{1,3},\d)", text):
+        secs = int(m.group(1)) * 60 + int(m.group(2))
+        bt = float(m.group(3).replace(",", "."))
+        pts.add((secs, bt))
+    return sorted(pts)
+
+
+def _cropster_events(text: str, total_s: float) -> list[dict]:
+    events: list[dict] = []
+    m = re.search(r"(\d+):(\d{2})\s+\d{1,3},\d[^\n]*(?:[Pp]rimer crac|[Ff]irst [Cc]rack)", text)
+    if m:
+        events.append({"t": float(int(m.group(1)) * 60 + int(m.group(2))),
+                       "type": "FC_START", "label": "First Crack"})
+    events.append({"t": round(total_s, 2), "type": "DROP", "label": "Drop"})
+    return events
+
+
+def _cropster_title(text: str) -> str | None:
+    m = re.search(r"\[[A-Za-z]+-\d+\][^\n]*", text)
+    return m.group(0).strip() if m else None
+
+
+def _long_vector_subpaths(content: str) -> list[list[tuple[float, float]]]:
+    """On-curve points of each stroked subpath, grouped by moveto (`m`)."""
+    subs: list[list[tuple[float, float]]] = []
+    cur: list[tuple[float, float]] = []
+    stack: list[float] = []
+    for tok in content.split():
+        try:
+            stack.append(float(tok))
+            continue
+        except ValueError:
+            pass
+        if tok in ("m", "l") and len(stack) >= 2:
+            x, y = stack[-2], stack[-1]
+            if tok == "m":
+                if len(cur) > 3:
+                    subs.append(cur)
+                cur = [(x, y)]
+            else:
+                cur.append((x, y))
+        elif tok == "c" and len(stack) >= 6:   # bezier: keep the on-curve endpoint
+            cur.append((stack[-2], stack[-1]))
+        stack = []
+    if len(cur) > 3:
+        subs.append(cur)
+    return [s for s in subs if len(s) > 100]
+
+
+def _calibrate(subpath, table, total_s):
+    """Map a subpath to [{t,bt}] using the table; return (points, mean_resid)."""
+    pts = sorted(subpath)                       # by x (time increases L->R)
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    if xs[-1] == xs[0]:
+        return None
+    # Sample curve y at each table time, then linear-regress bt = a*y + b.
+    Y, B = [], []
+    for tk, btk in table:
+        xk = xs[0] + (xs[-1] - xs[0]) * (tk / total_s)
+        Y.append(_interp(xs, ys, xk))
+        B.append(btk)
+    n = len(Y)
+    sy, sb = sum(Y), sum(B)
+    den = n * sum(v * v for v in Y) - sy * sy
+    if den == 0:
+        return None
+    a = (n * sum(Y[i] * B[i] for i in range(n)) - sy * sb) / den
+    b = (sb - a * sy) / n
+    resid = sum(abs(a * Y[i] + b - B[i]) for i in range(n)) / n
+    points = [{"t": round((x - xs[0]) / (xs[-1] - xs[0]) * total_s, 2),
+               "bt": round(a * y + b, 1)} for x, y in zip(xs, ys)]
+    return points, resid
+
+
+def parse_cropster_pdf(data: bytes) -> tuple[list[dict], list[dict], str | None]:
+    """Extract the high-res bean curve (+ events, title) from a Cropster PDF."""
+    try:
+        from pypdf import PdfReader
+    except ImportError as e:  # pragma: no cover
+        raise ValueError("PDF import needs pypdf (pip install pypdf).") from e
+
+    reader = PdfReader(io.BytesIO(data))
+    text = "\n".join((pg.extract_text() or "") for pg in reader.pages)
+    table = _cropster_table(text)
+    if len(table) < 2:
+        raise ValueError(
+            "This doesn't look like a Cropster roast report — no measurements "
+            "table found. Export the roast detail as PDF from Cropster."
+        )
+    total_s = table[-1][0]
+    title = _cropster_title(text)
+    events = _cropster_events(text, total_s)
+
+    # Best-calibrating long vector path across all pages = the bean curve.
+    best = None
+    for pg in reader.pages:
+        try:
+            content = pg.get_contents().get_data().decode("latin1", "replace")
+        except Exception:
+            continue
+        for sub in _long_vector_subpaths(content):
+            cal = _calibrate(sub, table, total_s)
+            if cal and (best is None or cal[1] < best[1]):
+                best = cal
+
+    if best is not None and best[1] <= _CAL_TOLERANCE_C:
+        points = best[0]
+    else:
+        # Couldn't isolate/validate the plotted curve — use the table itself.
+        points = [{"t": float(t), "bt": bt} for t, bt in table]
+
+    points = _normalize(points)
+    if len(points) > _CROPSTER_MAX_POINTS:
+        step = len(points) / _CROPSTER_MAX_POINTS
+        idxs = sorted({int(i * step) for i in range(_CROPSTER_MAX_POINTS)} | {len(points) - 1})
+        points = [points[i] for i in idxs]
+    return points, events, title
+
+
+def parse_profile_file(
+    filename: str, data: bytes
+) -> tuple[str, list[dict], list[dict], str | None]:
+    """Dispatch on file extension. Returns (source, points, events, suggested_name).
+
+    `source` is 'csv' | 'artisan' | 'cropster_pdf'. `suggested_name` is a name
+    pulled from the file's contents (PDF only), or None to let the caller fall
+    back to the filename. Raises ValueError on an unsupported extension (notably
+    `.crc`, which is encrypted) or a parse failure.
     """
     name = (filename or "").lower()
     if name.endswith(".alog"):
         points, events = parse_artisan_alog(data)
-        return "artisan", points, events
+        return "artisan", points, events, None
     if name.endswith(".csv"):
         points, events = parse_csv(data)
-        return "csv", points, events
+        return "csv", points, events, None
+    if name.endswith(".pdf"):
+        points, events, title = parse_cropster_pdf(data)
+        return "cropster_pdf", points, events, title
     if name.endswith(".crc"):
         raise ValueError(
             "Cropster .crc files are encrypted and can't be imported. "
-            "Export the roast as CSV or an Artisan .alog instead."
+            "Export the roast as a PDF (or CSV / Artisan .alog) instead."
         )
-    raise ValueError(f"Unsupported file type: {filename!r}. Use .csv or .alog.")
+    raise ValueError(f"Unsupported file type: {filename!r}. Use .pdf, .csv or .alog.")

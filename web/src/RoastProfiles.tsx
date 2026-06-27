@@ -17,6 +17,7 @@ const SOURCE_LABEL: Record<string, string> = {
   roast: "from roast",
   csv: "CSV",
   artisan: "Artisan",
+  cropster_pdf: "Cropster PDF",
 };
 
 export default function RoastProfiles() {
@@ -106,7 +107,7 @@ export default function RoastProfiles() {
         <input
           ref={fileRef}
           type="file"
-          accept=".csv,.alog"
+          accept=".pdf,.csv,.alog"
           style={{ display: "none" }}
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -128,7 +129,7 @@ export default function RoastProfiles() {
             marginBottom: 10,
           }}
         >
-          {busy ? "Importing…" : "⬆ Import CSV / Artisan (.alog)"}
+          {busy ? "Importing…" : "⬆ Import Cropster PDF / CSV / Artisan"}
         </button>
 
         {error && <div style={{ color: "#991b1b", fontSize: 13, marginBottom: 8 }}>{error}</div>}

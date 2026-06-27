@@ -11,7 +11,7 @@ binaries = []
 hiddenimports = []
 
 # uvicorn + the Phidget Python wrapper load submodules dynamically; pull them all.
-for pkg in ("uvicorn", "Phidget22"):
+for pkg in ("uvicorn", "Phidget22", "pypdf"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
