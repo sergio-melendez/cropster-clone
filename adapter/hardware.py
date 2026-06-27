@@ -18,6 +18,9 @@ from abc import ABC, abstractmethod
 class TemperatureSource(ABC):
     """A source of temperature readings, in degrees Celsius."""
 
+    #: Human-readable name shown in the UI header (overridden per source).
+    label: str = "unknown source"
+
     @abstractmethod
     def read(self) -> dict:
         """Return the latest reading, e.g. {'bt': 184.2, 'et': 210.5}.
@@ -43,6 +46,8 @@ class SimulatedSource(TemperatureSource):
     Profile: hot charge -> turning point ~90C around 75s -> rise through
     drying/maillard -> approaching ~215C, with realistic ET above BT.
     """
+
+    label = "simulated source"
 
     def __init__(self) -> None:
         self._t0: float | None = None
@@ -136,6 +141,9 @@ class PhidgetSource(TemperatureSource):
 
         self._bt = self._open_channel(bt_channel, bt_tc)
         self._et = self._open_channel(et_channel, et_tc) if et_channel is not None else None
+
+        et_desc = f"ET ch{et_channel}/{et_tc}" if et_channel is not None else "no ET"
+        self.label = f"Phidget 1048 (BT ch{bt_channel}/{bt_tc}, {et_desc})"
 
     def _open_channel(self, channel: int, tc_type: str):
         tc = tc_type.upper()

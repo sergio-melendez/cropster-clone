@@ -40,7 +40,7 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
 }
 
 export default function App() {
-  const { connected, roasting, history, events, live, lastSavedId, start, stop, markEvent } =
+  const { connected, roasting, history, events, live, source, lastSavedId, start, stop, markEvent } =
     useRoastSocket();
   const [view, setView] = useState<View>("live");
 
@@ -102,7 +102,7 @@ export default function App() {
         >
           {connected ? "● adapter connected" : "○ adapter offline"}
         </span>
-        <span style={{ fontSize: 12, color: "#6b7280" }}>(simulated source)</span>
+        <span style={{ fontSize: 12, color: "#6b7280" }}>({source ?? "connecting…"})</span>
 
         <nav style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
           {(["live", "history", "profiles"] as const).map((v) => (
