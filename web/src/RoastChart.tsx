@@ -44,14 +44,24 @@ function hasTargetRor(target?: ProfilePoint[]): boolean {
   return !!target && target.some((p) => p.ror != null);
 }
 
+// Short tag for an on-chart marker (full text lives in the comments list).
+const EVENT_TAG: Record<string, string> = {
+  TP: "TP", DRY_END: "DE", FC_START: "FC", FC_END: "FCe", DROP: "Drop", GAS: "Gas",
+};
+function eventTag(ev: RoastEvent): string {
+  return EVENT_TAG[ev.type] ?? "•";
+}
+
 export default function RoastChart({
   history,
   events,
   target,
+  targetEvents,
 }: {
   history: RoastPoint[];
   events: RoastEvent[];
   target?: ProfilePoint[];
+  targetEvents?: RoastEvent[];
 }) {
   const data = buildData(history, target);
   return (
@@ -142,6 +152,16 @@ export default function RoastChart({
           isAnimationActive={false}
           strokeWidth={1.5}
         />
+        {(targetEvents ?? []).map((ev, i) => (
+          <ReferenceLine
+            key={`tgt-${i}`}
+            yAxisId="temp"
+            x={ev.t}
+            stroke="#9ca3af"
+            strokeDasharray="2 4"
+            label={{ value: eventTag(ev), position: "insideTopLeft", fill: "#6b7280", fontSize: 11, fontWeight: 600 }}
+          />
+        ))}
         {events.map((ev, i) => (
           <ReferenceLine
             key={i}
@@ -149,7 +169,7 @@ export default function RoastChart({
             x={ev.t}
             stroke="#2563eb"
             strokeDasharray="2 2"
-            label={{ value: ev.label, position: "top", fill: "#2563eb", fontSize: 11 }}
+            label={{ value: eventTag(ev), position: "top", fill: "#2563eb", fontSize: 11 }}
           />
         ))}
       </ComposedChart>

@@ -9,6 +9,7 @@ export interface RoastEvent {
   t: number;
   type: string;
   label: string;
+  bt?: number;   // bean temp at the comment (PDF comments carry it)
 }
 
 // Summary row for the history list (no curve).
