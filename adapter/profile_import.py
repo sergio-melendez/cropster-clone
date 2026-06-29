@@ -20,6 +20,7 @@ from __future__ import annotations
 import ast
 import bisect
 import csv
+import json
 import io
 import re
 
@@ -233,17 +234,64 @@ def _cropster_table_ror(text: str) -> list[tuple[float, float]]:
     return sorted(pts)
 
 
+# A Cropster comment row: time, bean temp, optional RoR, then free text. The
+# time may be glued to the temp (profile export) or spaced (lot report):
+#   "01:05 165,7°C Temperatura de fondo"   "09:33193,9°C6,7 bajamos a 9 de gas..."
+_COMMENT_RE = re.compile(
+    r"(\d{1,2}):(\d{2})\s*(\d{1,3},\d)\s*°?\s*C?\s*(?:\d{1,2},\d)?\s*"
+    r"([^\d\s°][^\n]*)"
+)
+
+
+def _comment_type(label: str) -> str:
+    # Match the milestone only when the label *is* it (starts with the phrase),
+    # so a free-text note like "bajamos a 9 ... por primer crack" stays GENERIC.
+    low = label.lower().strip()
+    if low.startswith(("temperatura de fondo", "bottom temp", "turning")):
+        return "TP"
+    if low.startswith(("primer crac", "first crack")):
+        return "FC_START"
+    if low.startswith(("cambio de color", "color change", "dry end")):
+        return "DRY_END"
+    if low.startswith(("drop", "descarga")):
+        return "DROP"
+    if low.startswith("gas"):
+        return "GAS"
+    return "GENERIC"
+
+
+def _cropster_comments(text: str) -> list[dict]:
+    """All time-stamped comments/annotations from the PDF: {t, type, label, bt}."""
+    out: list[dict] = []
+    seen: set[tuple[str, int]] = set()
+    for line in text.splitlines():
+        if re.search(r"\d{1,2}/\d{1,2}/\d{4}", line):   # historial table rows
+            continue
+        if "cropster" in line.lower() or "creado" in line.lower():
+            continue
+        m = _COMMENT_RE.search(line)
+        if not m:
+            continue
+        label = m.group(4).strip().rstrip("·-").strip()
+        if len(label) < 2:
+            continue
+        t = float(int(m.group(1)) * 60 + int(m.group(2)))
+        ev_type = _comment_type(label)
+        key = (ev_type, round(t))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"t": t, "type": ev_type, "label": label,
+                    "bt": float(m.group(3).replace(",", "."))})
+    return out
+
+
 def _cropster_events(text: str, total_s: float) -> list[dict]:
-    events: list[dict] = []
-    # The time may be glued to the temp (lot report has a space, profile export
-    # doesn't): "09:19 193,9 ... Primer crac" or "09:19192,2°C6,4Primer crac".
-    m = re.search(r"(\d+):(\d{2})\s*\d{1,3},\d[^\n]*?(?:[Pp]rimer crac|[Ff]irst [Cc]rack)", text)
-    if m:
-        events.append({"t": float(int(m.group(1)) * 60 + int(m.group(2))),
-                       "type": "FC_START", "label": "First Crack"})
-    if total_s > 0:
+    """Comments from the PDF, plus a synthesized Drop at the end if absent."""
+    events = _cropster_comments(text)
+    if total_s > 0 and not any(e["type"] == "DROP" for e in events):
         events.append({"t": round(total_s, 2), "type": "DROP", "label": "Drop"})
-    return events
+    return sorted(events, key=lambda e: e["t"])
 
 
 def _cropster_title(text: str) -> str | None:
@@ -558,19 +606,42 @@ def parse_cropster_pdf(data: bytes) -> tuple[list[dict], list[dict], str | None]
     return points, events, title
 
 
+NATIVE_FORMAT = "roastmonitor.profile"
+
+
+def parse_native(data: bytes) -> tuple[list[dict], list[dict], str | None]:
+    """Parse our own exported profile JSON. Returns (points, events, name)."""
+    try:
+        obj = json.loads(data.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise ValueError(f"Not valid JSON: {e}") from e
+    if not isinstance(obj, dict) or obj.get("format") != NATIVE_FORMAT:
+        raise ValueError(
+            "Unrecognized JSON — expected a RoastMonitor profile export "
+            f'(format "{NATIVE_FORMAT}").'
+        )
+    points = obj.get("points") or []
+    if not points:
+        raise ValueError("Profile export has no points.")
+    events = obj.get("events") or []
+    return points, events, obj.get("name")
+
+
 def parse_profile_file(
     filename: str, data: bytes
 ) -> tuple[str, list[dict], list[dict], str | None]:
     """Dispatch on file extension. Returns (source, points, events, suggested_name).
 
-    `source` is 'csv' | 'artisan' | 'cropster_pdf'. Points are `[{t, bt, ror}]`
-    (RoR derived from the bean curve). `suggested_name` is a name pulled from the
-    file's contents (PDF only), or None to let the caller fall back to the
-    filename. Raises ValueError on an unsupported extension (notably `.crc`, which
-    is encrypted) or a parse failure.
+    `source` is 'csv' | 'artisan' | 'cropster_pdf' | 'native'. Points are
+    `[{t, bt, ror}]`. `suggested_name` is a name pulled from the file's contents
+    (PDF / native), or None to fall back to the filename. Raises ValueError on an
+    unsupported extension (notably `.crc`, which is encrypted) or a parse failure.
     """
     name = (filename or "").lower()
-    if name.endswith(".alog"):
+    if name.endswith(".json"):
+        points, events, title = parse_native(data)
+        source = "native"
+    elif name.endswith(".alog"):
         source, (points, events), title = "artisan", parse_artisan_alog(data), None
     elif name.endswith(".csv"):
         source, (points, events), title = "csv", parse_csv(data), None
@@ -583,7 +654,9 @@ def parse_profile_file(
             "Export the roast as a PDF (or CSV / Artisan .alog) instead."
         )
     else:
-        raise ValueError(f"Unsupported file type: {filename!r}. Use .pdf, .csv or .alog.")
+        raise ValueError(
+            f"Unsupported file type: {filename!r}. Use .pdf, .csv, .alog or .json."
+        )
 
-    # Derive RoR uniformly from the bean curve for every source.
+    # Derive RoR from the bean curve unless the source already carries it.
     return source, _with_ror(points), events, title

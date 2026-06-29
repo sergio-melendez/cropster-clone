@@ -18,7 +18,29 @@ const SOURCE_LABEL: Record<string, string> = {
   csv: "CSV",
   artisan: "Artisan",
   cropster_pdf: "Cropster PDF",
+  native: "RoastMonitor",
 };
+
+// Download a profile as our native .json format (round-trips back via import).
+function exportProfile(p: Profile): void {
+  const doc = {
+    format: "roastmonitor.profile",
+    version: 1,
+    name: p.name,
+    source: p.source,
+    duration_s: p.duration_s,
+    notes: p.notes,
+    points: p.points,
+    events: p.events,
+  };
+  const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${p.name.replace(/[^\w.-]+/g, "_")}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function RoastProfiles() {
   const [profiles, setProfiles] = useState<ProfileMeta[]>([]);
@@ -107,7 +129,7 @@ export default function RoastProfiles() {
         <input
           ref={fileRef}
           type="file"
-          accept=".pdf,.csv,.alog"
+          accept=".pdf,.csv,.alog,.json"
           style={{ display: "none" }}
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -129,7 +151,7 @@ export default function RoastProfiles() {
             marginBottom: 10,
           }}
         >
-          {busy ? "Importing…" : "⬆ Import Cropster PDF / CSV / Artisan"}
+          {busy ? "Importing…" : "⬆ Import Cropster PDF / CSV / Artisan / .json"}
         </button>
 
         {error && <div style={{ color: "#991b1b", fontSize: 13, marginBottom: 8 }}>{error}</div>}
@@ -168,14 +190,38 @@ export default function RoastProfiles() {
       <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16 }}>
         {selected ? (
           <>
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>{selected.name}</div>
-              <div style={{ fontSize: 13, color: "#6b7280" }}>
-                {SOURCE_LABEL[selected.source] ?? selected.source} · {fmtDuration(selected.duration_s)} ·
-                {" "}{selected.points.length} points
+            <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{selected.name}</div>
+                <div style={{ fontSize: 13, color: "#6b7280" }}>
+                  {SOURCE_LABEL[selected.source] ?? selected.source} · {fmtDuration(selected.duration_s)} ·
+                  {" "}{selected.points.length} points
+                </div>
               </div>
+              <button
+                onClick={() => exportProfile(selected)}
+                style={{ fontSize: 13, fontWeight: 600, padding: "6px 12px", borderRadius: 8, border: "1px solid #2563eb", background: "#fff", color: "#2563eb", cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                ⬇ Export .json
+              </button>
             </div>
             <RoastChart history={[]} events={selected.events} target={selected.points} />
+            {selected.events.length > 0 && (
+              <div style={{ marginTop: 12, fontSize: 13, color: "#374151" }}>
+                <strong>Comments:</strong>
+                <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                  {selected.events.map((e, i) => (
+                    <li key={i} style={{ marginBottom: 2 }}>
+                      <span style={{ fontVariantNumeric: "tabular-nums", color: "#6b7280" }}>
+                        {fmtDuration(e.t)}
+                      </span>{" "}
+                      {e.label}
+                      {e.bt != null ? ` · ${e.bt.toFixed(1)}°` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         ) : (
           <div style={{ color: "#6b7280", fontSize: 14, padding: 40, textAlign: "center" }}>

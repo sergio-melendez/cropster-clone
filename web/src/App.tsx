@@ -218,7 +218,7 @@ export default function App() {
       )}
 
       <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16 }}>
-        <RoastChart history={history} events={events} target={target} />
+        <RoastChart history={history} events={events} target={target} targetEvents={activeProfile?.events} />
       </div>
 
       {events.length > 0 && (

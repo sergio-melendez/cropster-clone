@@ -176,12 +176,26 @@ Key funcs: `_fit_curve`/`_curve_series`, `_cropster_table_ror` (table path);
 `_with_ror` leaves curve-read RoR untouched and only derives when a source lacks
 it; RoR falls back to derived if the RoR curve can't be confidently fit.
 
+PDF **comments** are read too: `_cropster_comments` parses the time-stamped
+annotation rows (`MM:SS <temp>°C [RoR] <text>`) into events `{t, type, label, bt}`
+— Temperatura de fondo→TP, Primer crac→FC_START, Cambio de color→DRY_END, gas
+notes→GAS, free text→GENERIC (matched by *startswith* so a sentence mentioning
+"primer crack" stays GENERIC). The Profiles preview shows a comments list +
+on-chart markers (short type tags; full text in the list), and the live chart
+overlays the active profile's comments as muted reference lines (`targetEvents`
+prop). `RoastEvent.bt?` carries the comment temperature.
+
+**Native profile format** (`.json`, `format: "roastmonitor.profile"`): export a
+profile client-side from `RoastProfiles` (Export button → Blob download) and
+re-import via the same `/profiles/import` (`parse_native`, `source="native"`) —
+lossless round-trip of curve + RoR + comments.
+
 Note: Cropster `.crc` files are **AES-encrypted** (verified: entropy ~8.0, no
 plaintext) and can't be parsed without Cropster's key. `.crc` import is rejected
 with a clear message; the **PDF export is the supported Cropster→app path**.
 Revisit `.crc` via the Cropster API or a real key.
 
 Not yet built (good next tasks):
-- CSV / Artisan-compatible *export* (we import; export is the inverse).
+- CSV / Artisan-compatible *export* (native JSON export exists; CSV is the gap).
 - Drift-alert thresholds as user settings; server-side active-profile state.
 - Tests (pytest + vitest) and CI.
