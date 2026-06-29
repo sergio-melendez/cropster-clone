@@ -29,8 +29,9 @@ export interface SavedRoast extends Omit<SavedRoastMeta, "event_count"> {
 
 // A point on a target profile curve (bean temp over time).
 export interface ProfilePoint {
-  t: number;   // seconds since charge
-  bt: number;  // target bean temp (C)
+  t: number;          // seconds since charge
+  bt: number;         // target bean temp (C)
+  ror?: number;       // target rate of rise (C/min); absent on profiles saved before RoR support
 }
 
 // Summary row for the profiles list (no curve).

@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     source      TEXT NOT NULL,   -- 'roast' | 'csv' | 'artisan'
     duration_s  REAL NOT NULL,   -- last point's t, for the list view
     notes       TEXT,
-    points_json TEXT NOT NULL,   -- [{t, bt}, ...] target bean-temp curve
+    points_json TEXT NOT NULL,   -- [{t, bt, ror}, ...] target curve (ror derived; absent on older rows)
     events_json TEXT NOT NULL    -- [{t, type, label}, ...] optional milestones
 );
 """
