@@ -1,7 +1,7 @@
 import { useState } from "react";
 import RoastChart from "./RoastChart";
 import { computeGoals } from "./profile";
-import { Stat, btn, fmtTime } from "./ui";
+import { btn, fmtTime } from "./ui";
 import type { Profile, RoastEvent, RoastPoint } from "./types";
 
 const COMMENT_PRESETS = [
@@ -194,10 +194,17 @@ export default function RoastScreen({
           </div>
         )}
 
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, display: "flex", justifyContent: "space-around" }}>
-          <Stat label="Bean" value={live ? `${live.bt.toFixed(1)}°` : "--"} color="#dc2626" />
-          <Stat label="Env" value={live && live.et != null ? `${live.et.toFixed(1)}°` : "--"} color="#ea580c" />
-          <Stat label="RoR" value={live ? `${live.ror.toFixed(1)}` : "--"} color="#16a34a" />
+        <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: "10px 16px", display: "flex", flexDirection: "column", gap: 4 }}>
+          {[
+            { label: "Bean temp °C", value: live ? live.bt.toFixed(1) : "--", color: "#dc2626" },
+            { label: "Env temp °C", value: live && live.et != null ? live.et.toFixed(1) : "--", color: "#ea580c" },
+            { label: "RoR °C/min", value: live ? live.ror.toFixed(1) : "--", color: "#16a34a" },
+          ].map((r) => (
+            <div key={r.label} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>{r.label}</span>
+              <span style={{ fontSize: 30, fontWeight: 700, color: r.color, fontVariantNumeric: "tabular-nums" }}>{r.value}</span>
+            </div>
+          ))}
         </div>
       </div>
 
