@@ -159,7 +159,7 @@ export default function RoastChart({
             x={ev.t}
             stroke="#9ca3af"
             strokeDasharray="2 4"
-            label={{ value: eventTag(ev), position: "insideTopLeft", fill: "#9ca3af", fontSize: 10 }}
+            label={{ value: eventTag(ev), position: "insideTopLeft", fill: "#6b7280", fontSize: 11, fontWeight: 600 }}
           />
         ))}
         {events.map((ev, i) => (

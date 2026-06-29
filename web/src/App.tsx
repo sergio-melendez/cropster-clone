@@ -231,6 +231,20 @@ export default function App() {
           ))}
         </div>
       )}
+
+      {activeProfile && activeProfile.events.length > 0 && (
+        <div style={{ marginTop: 16, fontSize: 13, color: "#374151" }}>
+          <strong style={{ color: "#6b7280" }}>
+            Target comments ({activeProfile.name}):
+          </strong>{" "}
+          {activeProfile.events.map((e, i) => (
+            <span key={i} style={{ marginRight: 14, color: "#6b7280" }}>
+              {e.label} @ {fmtTime(e.t)}
+              {e.bt != null ? ` · ${e.bt.toFixed(1)}°` : ""}
+            </span>
+          ))}
+        </div>
+      )}
       </>
       )}
     </div>
