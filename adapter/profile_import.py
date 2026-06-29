@@ -171,8 +171,12 @@ def _with_ror(points: list[dict]) -> list[dict]:
 
     Computed from the bean-temp curve over a trailing <=30s window, the same way
     the adapter derives live RoR — so a profile's target RoR is consistent with
-    the RoR shown during a roast, at the resolution of the source curve.
+    the RoR shown during a roast, at the resolution of the source curve. Points
+    that already carry a `ror` (e.g. read straight off the PDF's RoR curve) are
+    left untouched.
     """
+    if points and all("ror" in p for p in points):
+        return points
     out: list[dict] = []
     for i, p in enumerate(points):
         t, bt = p["t"], p["bt"]
@@ -222,11 +226,14 @@ def _cropster_table(text: str) -> list[tuple[float, float]]:
 
 def _cropster_events(text: str, total_s: float) -> list[dict]:
     events: list[dict] = []
-    m = re.search(r"(\d+):(\d{2})\s+\d{1,3},\d[^\n]*(?:[Pp]rimer crac|[Ff]irst [Cc]rack)", text)
+    # The time may be glued to the temp (lot report has a space, profile export
+    # doesn't): "09:19 193,9 ... Primer crac" or "09:19192,2°C6,4Primer crac".
+    m = re.search(r"(\d+):(\d{2})\s*\d{1,3},\d[^\n]*?(?:[Pp]rimer crac|[Ff]irst [Cc]rack)", text)
     if m:
         events.append({"t": float(int(m.group(1)) * 60 + int(m.group(2))),
                        "type": "FC_START", "label": "First Crack"})
-    events.append({"t": round(total_s, 2), "type": "DROP", "label": "Drop"})
+    if total_s > 0:
+        events.append({"t": round(total_s, 2), "type": "DROP", "label": "Drop"})
     return events
 
 
@@ -288,8 +295,189 @@ def _calibrate(subpath, table, total_s):
     return points, resid
 
 
+# ---- axis-tick path (Cropster "profile" PDF: no table) ----------------------
+# Profile/"Tuestes" exports omit the 30s table but draw the same axes. We read the
+# tick LABELS (their page-space positions) to calibrate, then extract the two
+# dark-blue curves with the CTM applied: the wide-spanning one is BT (temp axis),
+# the low flat one is RoR (RoR axis). Time comes from the x-axis (mm:ss) ticks.
+
+_DARK_BLUE = (0.2, 0.4, 0.8)
+
+
+def _mat_mul(m1, m2):
+    a1, b1, c1, d1, e1, f1 = m1
+    a2, b2, c2, d2, e2, f2 = m2
+    return (a1 * a2 + b1 * c2, a1 * b2 + b1 * d2,
+            c1 * a2 + d1 * c2, c1 * b2 + d1 * d2,
+            e1 * a2 + f1 * c2 + e2, e1 * b2 + f1 * d2 + f2)
+
+
+def _ctm_subpaths(content: str) -> list[dict]:
+    """Stroked subpaths in PAGE space (CTM applied), with stroke colour."""
+    subs: list[dict] = []
+    cur: list[tuple[float, float]] = []
+    stack: list[float] = []
+    ctm = (1.0, 0, 0, 1.0, 0, 0)
+    gstack: list = []
+    stroke = None
+    cur_stroke = None
+
+    def apply(x, y):
+        a, b, c, d, e, f = ctm
+        return (a * x + c * y + e, b * x + d * y + f)
+
+    def flush():
+        if len(cur) > 3:
+            subs.append({"stroke": cur_stroke, "pts": list(cur)})
+
+    for tok in content.split():
+        try:
+            stack.append(float(tok))
+            continue
+        except ValueError:
+            pass
+        if tok == "q":
+            gstack.append((ctm, stroke))
+        elif tok == "Q":
+            if gstack:
+                ctm, stroke = gstack.pop()
+        elif tok == "cm" and len(stack) >= 6:
+            ctm = _mat_mul(tuple(stack[-6:]), ctm)
+        elif tok == "RG" and len(stack) >= 3:
+            stroke = tuple(round(v, 2) for v in stack[-3:])
+        elif tok in ("m", "l") and len(stack) >= 2:
+            p = apply(stack[-2], stack[-1])
+            if tok == "m":
+                flush()
+                cur = [p]
+                cur_stroke = stroke
+            else:
+                cur.append(p)
+        elif tok == "c" and len(stack) >= 6:
+            if cur:
+                cur.append(apply(stack[-2], stack[-1]))
+        stack = []
+    flush()
+    return [s for s in subs if len(s["pts"]) > 100]
+
+
+def _fit(pairs: list[tuple[float, float]]):
+    """Least-squares fit value = a*coord + b; return a function coord->value."""
+    n = len(pairs)
+    sc = sum(c for _, c in pairs)
+    sv = sum(v for v, _ in pairs)
+    den = n * sum(c * c for _, c in pairs) - sc * sc
+    if den == 0:
+        return None
+    a = (n * sum(v * c for v, c in pairs) - sc * sv) / den
+    b = (sv - a * sc) / n
+    return lambda coord: a * coord + b
+
+
+def _axis_maps(reader):
+    """From the chart's tick labels, return (x->t, y->temp, y->ror) calibrators."""
+    labels: list[tuple[str, float, float]] = []
+
+    def visit(text, cm, tm, font, size):
+        s = (text or "").strip()
+        if not s:
+            return
+        x = cm[0] * tm[4] + cm[2] * tm[5] + cm[4]
+        y = cm[1] * tm[4] + cm[3] * tm[5] + cm[5]
+        labels.append((s, x, y))
+
+    reader.pages[0].extract_text(visitor_text=visit)
+
+    # Time axis: mm:ss labels in a horizontal row.
+    times = [(int(m.group(1)) * 60 + int(m.group(2)), x)
+             for s, x, y in labels for m in [re.fullmatch(r"(\d{1,2}):(\d{2})", s)] if m]
+    x_to_t = _fit([(t, x) for t, x in times]) if len(times) >= 2 else None
+
+    # Integer labels, clustered into vertical axes by x.
+    ints = [(int(s), x, y) for s, x, y in labels if re.fullmatch(r"\d{1,3}", s)]
+    clusters: dict[int, list[tuple[int, float]]] = {}
+    for v, x, y in ints:
+        clusters.setdefault(round(x / 6), []).append((v, y))
+    temp_map = ror_map = None
+    temp_x = None
+    for col in sorted(clusters.values(), key=len, reverse=True):
+        if len(col) < 4:
+            continue
+        vals = [v for v, _ in col]
+        if max(vals) > 120 and temp_map is None:           # temperature axis (left)
+            temp_map = _fit([(v, y) for v, y in col]); temp_x = sum(y for _, y in col)
+        elif max(vals) <= 80 and min(vals) <= 5 and ror_map is None:  # RoR axis
+            ror_map = _fit([(v, y) for v, y in col])
+    return x_to_t, temp_map, ror_map
+
+
+def _resample_ror(bt_pts: list[dict], ror_pts: list[tuple[float, float]]) -> list[dict]:
+    """Attach a `ror` to each BT point by interpolating the RoR series at its t."""
+    if not ror_pts:
+        return bt_pts
+    rt = [t for t, _ in ror_pts]
+    rv = [v for _, v in ror_pts]
+    out = []
+    for p in bt_pts:
+        ror = _interp(rt, rv, p["t"]) if p["t"] >= rt[0] else 0.0
+        out.append({"t": p["t"], "bt": p["bt"], "ror": round(ror, 1)})
+    return out
+
+
+def _parse_by_axes(reader, text: str):
+    """Read BT (+ RoR) directly from the plotted curves using axis-tick calibration.
+
+    Returns (points, events) or None if the curves/axes can't be read.
+    """
+    x_to_t, temp_of_y, ror_of_y = _axis_maps(reader)
+    if x_to_t is None or temp_of_y is None:
+        return None
+
+    blues: list[dict] = []
+    for pg in reader.pages:
+        try:
+            content = pg.get_contents().get_data().decode("latin1", "replace")
+        except Exception:
+            continue
+        for s in _ctm_subpaths(content):
+            if s["stroke"] == _DARK_BLUE:
+                ys = [p[1] for p in s["pts"]]
+                s["yspan"] = max(ys) - min(ys)
+                blues.append(s)
+    if not blues:
+        return None
+
+    blues.sort(key=lambda s: -s["yspan"])
+    bt_curve = blues[0]                       # widest vertical span = bean temp
+    # RoR = a much flatter dark-blue curve (and only if we have a RoR axis).
+    ror_curve = next((s for s in blues[1:] if s["yspan"] < 0.6 * bt_curve["yspan"]), None)
+
+    bt_pts = []
+    for x, y in sorted(bt_curve["pts"]):
+        t = x_to_t(x)
+        if t >= 0:
+            bt_pts.append({"t": round(t, 2), "bt": round(temp_of_y(y), 1)})
+    if len(bt_pts) < 2:
+        return None
+
+    if ror_curve is not None and ror_of_y is not None:
+        ror_pts = sorted((x_to_t(x), ror_of_y(y)) for x, y in ror_curve["pts"] if x_to_t(x) >= 0)
+        points = _resample_ror(bt_pts, ror_pts)
+    else:
+        points = bt_pts  # no readable RoR curve; parse_profile_file derives it
+
+    points = sorted(points, key=lambda p: p["t"])
+    total_s = points[-1]["t"]
+    return points, _cropster_events(text, total_s)
+
+
 def parse_cropster_pdf(data: bytes) -> tuple[list[dict], list[dict], str | None]:
-    """Extract the high-res bean curve (+ events, title) from a Cropster PDF."""
+    """Extract the high-res bean curve (+ RoR, events, title) from a Cropster PDF.
+
+    Two layouts are supported: the lot **roast report** (has a 30s table → BT
+    calibrated against it) and the **profile/"Tuestes"** export (no table → BT and
+    RoR read off the plotted curves via axis-tick calibration).
+    """
     try:
         from pypdf import PdfReader
     except ImportError as e:  # pragma: no cover
@@ -297,35 +485,37 @@ def parse_cropster_pdf(data: bytes) -> tuple[list[dict], list[dict], str | None]
 
     reader = PdfReader(io.BytesIO(data))
     text = "\n".join((pg.extract_text() or "") for pg in reader.pages)
-    table = _cropster_table(text)
-    if len(table) < 2:
-        raise ValueError(
-            "This doesn't look like a Cropster roast report — no measurements "
-            "table found. Export the roast detail as PDF from Cropster."
-        )
-    total_s = table[-1][0]
     title = _cropster_title(text)
-    events = _cropster_events(text, total_s)
+    table = _cropster_table(text)
 
-    # Best-calibrating long vector path across all pages = the bean curve.
-    best = None
-    for pg in reader.pages:
-        try:
-            content = pg.get_contents().get_data().decode("latin1", "replace")
-        except Exception:
-            continue
-        for sub in _long_vector_subpaths(content):
-            cal = _calibrate(sub, table, total_s)
-            if cal and (best is None or cal[1] < best[1]):
-                best = cal
-
-    if best is not None and best[1] <= _CAL_TOLERANCE_C:
-        points = best[0]
+    if len(table) >= 2:
+        # --- lot report: calibrate the bean curve against the table ---
+        total_s = table[-1][0]
+        events = _cropster_events(text, total_s)
+        best = None
+        for pg in reader.pages:
+            try:
+                content = pg.get_contents().get_data().decode("latin1", "replace")
+            except Exception:
+                continue
+            for sub in _long_vector_subpaths(content):
+                cal = _calibrate(sub, table, total_s)
+                if cal and (best is None or cal[1] < best[1]):
+                    best = cal
+        if best is not None and best[1] <= _CAL_TOLERANCE_C:
+            points = _normalize(best[0])
+        else:
+            points = _normalize([{"t": float(t), "bt": bt} for t, bt in table])
     else:
-        # Couldn't isolate/validate the plotted curve — use the table itself.
-        points = [{"t": float(t), "bt": bt} for t, bt in table]
+        # --- profile export: read the curves directly ---
+        result = _parse_by_axes(reader, text)
+        if result is None:
+            raise ValueError(
+                "Couldn't read the roast curve from this PDF. Export the roast "
+                "detail or profile as PDF from Cropster (with the curve chart)."
+            )
+        points, events = result
 
-    points = _normalize(points)
     if len(points) > _CROPSTER_MAX_POINTS:
         step = len(points) / _CROPSTER_MAX_POINTS
         idxs = sorted({int(i * step) for i in range(_CROPSTER_MAX_POINTS)} | {len(points) - 1})
