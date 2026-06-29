@@ -200,7 +200,8 @@ def _with_ror(points: list[dict]) -> list[dict]:
 # curve (only the bean curve's mapped values match the table). If the curve can't
 # be found/validated, we fall back to the table points so the import still works.
 
-_CAL_TOLERANCE_C = 3.0          # max mean residual (°C) to trust the vector curve
+_CAL_TOLERANCE_C = 3.0          # max mean residual (°C) to trust the bean curve
+_ROR_TOLERANCE = 1.5            # max mean residual (°C/min) to trust the RoR curve
 _CROPSTER_MAX_POINTS = 800      # cap stored target points (a ~13min roast is ~760)
 
 
@@ -221,6 +222,14 @@ def _cropster_table(text: str) -> list[tuple[float, float]]:
         secs = int(m.group(1)) * 60 + int(m.group(2))
         bt = float(m.group(3).replace(",", "."))
         pts.add((secs, bt))
+    return sorted(pts)
+
+
+def _cropster_table_ror(text: str) -> list[tuple[float, float]]:
+    """(seconds, RoR) pairs from the printed table's 3rd column, where present."""
+    pts = set()
+    for m in re.finditer(r"(\d+):(\d{2})\s+\d{1,3},\d\s+(\d{1,2},\d)", text):
+        pts.add((int(m.group(1)) * 60 + int(m.group(2)), float(m.group(3).replace(",", "."))))
     return sorted(pts)
 
 
@@ -269,30 +278,39 @@ def _long_vector_subpaths(content: str) -> list[list[tuple[float, float]]]:
     return [s for s in subs if len(s) > 100]
 
 
-def _calibrate(subpath, table, total_s):
-    """Map a subpath to [{t,bt}] using the table; return (points, mean_resid)."""
+def _fit_curve(subpath, anchors, total_s):
+    """Calibrate a subpath against (time, value) anchors.
+
+    Maps the curve's x-range linearly to [0, total_s], then linear-regresses
+    value = a*y + b against the anchors. Returns (a, b, xs, ys, mean_resid) or
+    None. Used for both the bean curve (anchors = table BT) and the RoR curve
+    (anchors = table RoR).
+    """
     pts = sorted(subpath)                       # by x (time increases L->R)
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
     if xs[-1] == xs[0]:
         return None
-    # Sample curve y at each table time, then linear-regress bt = a*y + b.
-    Y, B = [], []
-    for tk, btk in table:
-        xk = xs[0] + (xs[-1] - xs[0]) * (tk / total_s)
-        Y.append(_interp(xs, ys, xk))
-        B.append(btk)
+    Y, V = [], []
+    for tk, vk in anchors:
+        Y.append(_interp(xs, ys, xs[0] + (xs[-1] - xs[0]) * (tk / total_s)))
+        V.append(vk)
     n = len(Y)
-    sy, sb = sum(Y), sum(B)
+    sy, sv = sum(Y), sum(V)
     den = n * sum(v * v for v in Y) - sy * sy
     if den == 0:
         return None
-    a = (n * sum(Y[i] * B[i] for i in range(n)) - sy * sb) / den
-    b = (sb - a * sy) / n
-    resid = sum(abs(a * Y[i] + b - B[i]) for i in range(n)) / n
-    points = [{"t": round((x - xs[0]) / (xs[-1] - xs[0]) * total_s, 2),
-               "bt": round(a * y + b, 1)} for x, y in zip(xs, ys)]
-    return points, resid
+    a = (n * sum(Y[i] * V[i] for i in range(n)) - sy * sv) / den
+    b = (sv - a * sy) / n
+    resid = sum(abs(a * Y[i] + b - V[i]) for i in range(n)) / n
+    return a, b, xs, ys, resid
+
+
+def _curve_series(fit, total_s):
+    """(t, value) points for a calibrated curve (fit from _fit_curve)."""
+    a, b, xs, ys, _ = fit
+    span = xs[-1] - xs[0]
+    return [((x - xs[0]) / span * total_s, a * y + b) for x, y in zip(xs, ys)]
 
 
 # ---- axis-tick path (Cropster "profile" PDF: no table) ----------------------
@@ -489,23 +507,40 @@ def parse_cropster_pdf(data: bytes) -> tuple[list[dict], list[dict], str | None]
     table = _cropster_table(text)
 
     if len(table) >= 2:
-        # --- lot report: calibrate the bean curve against the table ---
+        # --- lot report: calibrate the bean curve against the table's BT column,
+        # and the RoR curve against the table's RoR column ---
         total_s = table[-1][0]
         events = _cropster_events(text, total_s)
-        best = None
+        table_ror = _cropster_table_ror(text)
+
+        subs = []
         for pg in reader.pages:
             try:
                 content = pg.get_contents().get_data().decode("latin1", "replace")
             except Exception:
                 continue
-            for sub in _long_vector_subpaths(content):
-                cal = _calibrate(sub, table, total_s)
-                if cal and (best is None or cal[1] < best[1]):
-                    best = cal
-        if best is not None and best[1] <= _CAL_TOLERANCE_C:
-            points = _normalize(best[0])
+            subs.extend(_long_vector_subpaths(content))
+
+        # Bean curve = subpath that best fits the BT column.
+        bt_fits = [(s, _fit_curve(s, table, total_s)) for s in subs]
+        bt_fits = [(s, f) for s, f in bt_fits if f]
+        bt_sub = bt_fit = None
+        if bt_fits:
+            bt_sub, bt_fit = min(bt_fits, key=lambda sf: sf[1][4])
+        if bt_fit is not None and bt_fit[4] <= _CAL_TOLERANCE_C:
+            points = _normalize([{"t": round(t, 2), "bt": round(v, 1)}
+                                 for t, v in _curve_series(bt_fit, total_s)])
         else:
             points = _normalize([{"t": float(t), "bt": bt} for t, bt in table])
+
+        # RoR curve = a *different* subpath that best fits the RoR column.
+        if len(table_ror) >= 2:
+            r_fits = [(s, _fit_curve(s, table_ror, total_s)) for s in subs if s is not bt_sub]
+            r_fits = [(s, f) for s, f in r_fits if f]
+            if r_fits:
+                _, r_fit = min(r_fits, key=lambda sf: sf[1][4])
+                if r_fit[4] <= _ROR_TOLERANCE:
+                    points = _resample_ror(points, sorted(_curve_series(r_fit, total_s)))
     else:
         # --- profile export: read the curves directly ---
         result = _parse_by_axes(reader, text)
