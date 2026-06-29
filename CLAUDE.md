@@ -125,6 +125,19 @@ Milestone 1 (done): live BT/ET/RoR curve over WebSocket, start/stop, event
 markers (Turning Point, Dry End, First Crack, Drop), all working on the
 simulator and wired for the real 1048.
 
+Milestone 6 (done): two-screen Cropster-style UX. The web app splits into a
+**Dashboard** (`web/src/Dashboard.tsx`, pre-roast: profile selector, computed
+`computeGoals` table, comments, Profile/Chart tabs, recent-roasts list, live
+readouts, Start) and a **Roast screen** (`web/src/RoastScreen.tsx`, live: curve +
+target/reference overlay, Reference information + Reference comments sidebar with
+nearest-comment highlight, big Bean/Env/RoR readouts, Abort/Stop + duration, and a
+"＋ Comment" modal to log comments at the current temp). `App.tsx` renders
+`roasting ? RoastScreen : Dashboard`. Backend: `/roast/event` accepts `bt`,
+new `/roast/abort` (stop without saving). Shared bits in `web/src/ui.tsx`.
+Fixed a latent bug: the live `event` WS broadcast spread the event's own `type`
+over the message `type:"event"`, so client-marked comments never updated the
+chart — now sent as `type_`.
+
 Milestone 2 (done): persist completed roasts to SQLite + a history/review view.
 A finished roast is saved on `/roast/stop` (curve + events, with denormalized
 duration/peak-BT for the list). New REST routes: `GET /roasts` (summaries),

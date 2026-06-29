@@ -178,6 +178,7 @@ app.add_middleware(
 class EventIn(BaseModel):
     type: str
     label: str | None = None
+    bt: float | None = None     # bean temp at the comment (logged from the UI)
 
 
 @app.post("/roast/start")
@@ -205,13 +206,25 @@ async def roast_stop():
     return {"ok": True, "roasting": False, "roast_id": roast_id}
 
 
+@app.post("/roast/abort")
+async def roast_abort():
+    """Stop the roast WITHOUT persisting it (discard)."""
+    state.stop()
+    await manager.broadcast({"type": "roast_stopped", "roast_id": None})
+    return {"ok": True, "roasting": False, "roast_id": None}
+
+
 @app.post("/roast/event")
 async def roast_event(ev: EventIn):
     if not state.roasting:
         return {"ok": False, "error": "not roasting"}
-    entry = {"t": round(state.elapsed(), 2), "type": ev.type, "label": ev.label or ev.type}
+    entry = {"t": round(state.elapsed(), 2), "type": ev.type,
+             "label": ev.label or ev.type, "bt": ev.bt}
     state.events.append(entry)
-    await manager.broadcast({"type": "event", **entry})
+    # NB: send the event's own type as `type_` so it doesn't clobber the message
+    # `type: "event"` that the client switches on.
+    await manager.broadcast({"type": "event", "t": entry["t"], "type_": entry["type"],
+                             "label": entry["label"], "bt": entry["bt"]})
     return {"ok": True, "event": entry}
 
 

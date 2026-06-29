@@ -1,3 +1,4 @@
+import type { Profile, RoastEvent } from "./types";
 import type { ProfilePoint } from "./types";
 
 /**
@@ -32,4 +33,36 @@ export function interpolateTarget(
   if (b.t === a.t) return av;
   const frac = (t - a.t) / (b.t - a.t);
   return av + (bv - av) * frac;
+}
+
+export interface ProfileGoals {
+  chargeBt: number | null;       // bean temp at charge (first point)
+  turningPoint: RoastEvent | null;
+  dryEnd: RoastEvent | null;
+  firstCrack: RoastEvent | null;
+  duration: number;              // seconds (last point / drop)
+  developmentTime: number | null;  // drop - first crack
+  devRatio: number | null;       // developmentTime / duration
+  endBt: number | null;          // bean temp at drop / last point
+}
+
+/** Derive the goals / "reference information" shown on both screens from a profile. */
+export function computeGoals(p: Profile): ProfileGoals {
+  const ev = (type: string): RoastEvent | null =>
+    p.events.find((e) => e.type === type) ?? null;
+  const firstCrack = ev("FC_START");
+  const drop = ev("DROP");
+  const duration = drop?.t ?? (p.points.length ? p.points[p.points.length - 1].t : 0);
+  const developmentTime = firstCrack ? Math.max(0, duration - firstCrack.t) : null;
+  const endBt = drop?.bt ?? (p.points.length ? p.points[p.points.length - 1].bt : null);
+  return {
+    chargeBt: p.points.length ? p.points[0].bt : null,
+    turningPoint: ev("TP"),
+    dryEnd: ev("DRY_END"),
+    firstCrack,
+    duration,
+    developmentTime,
+    devRatio: developmentTime && duration ? developmentTime / duration : null,
+    endBt,
+  };
 }

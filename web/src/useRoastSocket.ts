@@ -51,7 +51,7 @@ export function useRoastSocket() {
             break;
           }
           case "event":
-            setEvents((ev) => [...ev, { t: msg.t, type: msg.type_ ?? msg.type, label: msg.label }]);
+            setEvents((ev) => [...ev, { t: msg.t, type: msg.type_ ?? msg.type, label: msg.label, bt: msg.bt ?? undefined }]);
             break;
           case "roast_started":
             setHistory([]);
@@ -76,12 +76,13 @@ export function useRoastSocket() {
 
   const start = () => fetch(`${API}/roast/start`, { method: "POST" });
   const stop = () => fetch(`${API}/roast/stop`, { method: "POST" });
-  const markEvent = (type: string, label?: string) =>
+  const abort = () => fetch(`${API}/roast/abort`, { method: "POST" });
+  const markEvent = (type: string, label?: string, bt?: number) =>
     fetch(`${API}/roast/event`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, label }),
+      body: JSON.stringify({ type, label, bt }),
     });
 
-  return { connected, roasting, history, events, live, source, lastSavedId, start, stop, markEvent };
+  return { connected, roasting, history, events, live, source, lastSavedId, start, stop, abort, markEvent };
 }
