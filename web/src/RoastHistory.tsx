@@ -13,11 +13,22 @@ function fmtDate(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleString();
 }
 
-export default function RoastHistory({ refreshKey }: { refreshKey: number | null }) {
+export default function RoastHistory({
+  refreshKey,
+  initialRoastId = null,
+}: {
+  refreshKey: number | null;
+  initialRoastId?: number | null;
+}) {
   const [roasts, setRoasts] = useState<SavedRoastMeta[]>([]);
   const [selected, setSelected] = useState<SavedRoast | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(initialRoastId);
   const [error, setError] = useState<string | null>(null);
+
+  // Open a specific roast when navigated here from the dashboard.
+  useEffect(() => {
+    if (initialRoastId != null) setSelectedId(initialRoastId);
+  }, [initialRoastId]);
 
   const refresh = useCallback(async () => {
     try {
