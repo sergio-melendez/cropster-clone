@@ -223,6 +223,7 @@ async def status():
         "history": state.history,
         "events": state.events,
         "sample_hz": SAMPLE_HZ,
+        "source": source.label,
     }
 
 
@@ -322,7 +323,8 @@ async def ws_endpoint(ws: WebSocket):
     await manager.connect(ws)
     # Send current history so a late-joining client catches up.
     await ws.send_json({"type": "snapshot", "history": state.history,
-                        "events": state.events, "roasting": state.roasting})
+                        "events": state.events, "roasting": state.roasting,
+                        "source": source.label})
     try:
         while True:
             await ws.receive_text()  # keepalive / ignore client messages

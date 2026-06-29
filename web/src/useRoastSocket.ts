@@ -14,6 +14,7 @@ export function useRoastSocket() {
   const [history, setHistory] = useState<RoastPoint[]>([]);
   const [events, setEvents] = useState<RoastEvent[]>([]);
   const [live, setLive] = useState<RoastPoint | null>(null);
+  const [source, setSource] = useState<string | null>(null);
   // Bumps each time a roast is saved, so the history view can refresh.
   const [lastSavedId, setLastSavedId] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -38,6 +39,7 @@ export function useRoastSocket() {
             setHistory(msg.history ?? []);
             setEvents(msg.events ?? []);
             setRoasting(msg.roasting);
+            if (msg.source) setSource(msg.source);
             break;
           case "reading": {
             setRoasting(msg.roasting);
@@ -81,5 +83,5 @@ export function useRoastSocket() {
       body: JSON.stringify({ type, label }),
     });
 
-  return { connected, roasting, history, events, live, lastSavedId, start, stop, markEvent };
+  return { connected, roasting, history, events, live, source, lastSavedId, start, stop, markEvent };
 }
