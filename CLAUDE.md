@@ -160,6 +160,22 @@ validates. `.pdf` is added to the `POST /profiles/import` dispatch; the importer
 also returns a suggested profile name (the PDF's `[PR-####] …` title). Needs
 `pypdf` (added to requirements + the PyInstaller spec).
 
+`parse_cropster_pdf` handles **two PDF layouts**, and in **both** the two
+dark-blue curves are **BT and RoR**, both read off the graph:
+- Lot **roast report** (has the 30s table): the bean curve is calibrated against
+  the table's BT column and the RoR curve against the table's RoR column
+  (`_fit_curve` regresses each subpath; lowest-residual = BT, next-best on the RoR
+  column = RoR). BT to <0.1°C, RoR to ~0.5.
+- Profile / **"Tuestes"** export (no table): calibrate from the chart's **axis
+  tick labels** (page-space positions via a cm×tm visitor) and read the curves
+  with the CTM applied — widest-vertical-span = BT (temp axis), flat low band =
+  RoR (RoR axis). Time from the mm:ss x-axis ticks. Accuracy ~1-2°C.
+
+Key funcs: `_fit_curve`/`_curve_series`, `_cropster_table_ror` (table path);
+`_axis_maps`, `_ctm_subpaths`, `_parse_by_axes`, `_resample_ror` (axis path).
+`_with_ror` leaves curve-read RoR untouched and only derives when a source lacks
+it; RoR falls back to derived if the RoR curve can't be confidently fit.
+
 Note: Cropster `.crc` files are **AES-encrypted** (verified: entropy ~8.0, no
 plaintext) and can't be parsed without Cropster's key. `.crc` import is rejected
 with a clear message; the **PDF export is the supported Cropster→app path**.
