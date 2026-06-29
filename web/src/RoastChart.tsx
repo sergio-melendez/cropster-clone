@@ -20,9 +20,10 @@ function fmtTime(s: number): string {
 
 /**
  * Merge the live/saved curve with an optional target profile into one dataset.
- * Each history point gets a `target_bt` (interpolated at its t); any target
- * points beyond the last history point are appended so the full target curve
- * shows ahead of the live curve.
+ * Each history point gets `target_bt` / `target_ror` (interpolated at its t); any
+ * target points beyond the last history point are appended so the full target
+ * curve shows ahead of the live curve. `target_ror` is null when the profile has
+ * no RoR (e.g. profiles saved before RoR support) — that line just won't draw.
  */
 function buildData(history: RoastPoint[], target?: ProfilePoint[]): Array<Record<string, number | null>> {
   if (!target || target.length === 0) return history as unknown as Array<Record<string, number | null>>;
@@ -30,11 +31,17 @@ function buildData(history: RoastPoint[], target?: ProfilePoint[]): Array<Record
   const merged: Array<Record<string, number | null>> = history.map((p) => ({
     ...p,
     target_bt: interpolateTarget(target, p.t),
+    target_ror: interpolateTarget(target, p.t, "ror"),
   }));
   for (const tp of target) {
-    if (tp.t > lastT) merged.push({ t: tp.t, target_bt: tp.bt });
+    if (tp.t > lastT) merged.push({ t: tp.t, target_bt: tp.bt, target_ror: tp.ror ?? null });
   }
   return merged;
+}
+
+// Does the target carry any RoR values? (older profiles don't)
+function hasTargetRor(target?: ProfilePoint[]): boolean {
+  return !!target && target.some((p) => p.ror != null);
 }
 
 export default function RoastChart({
@@ -111,6 +118,20 @@ export default function RoastChart({
           strokeWidth={1.5}
           strokeDasharray="5 4"
         />
+        {hasTargetRor(target) && (
+          <Line
+            yAxisId="ror"
+            type="monotone"
+            dataKey="target_ror"
+            name="Target RoR"
+            stroke="#86efac"
+            dot={false}
+            isAnimationActive={false}
+            strokeWidth={1.5}
+            strokeDasharray="6 3"
+            connectNulls
+          />
+        )}
         <Line
           yAxisId="ror"
           type="monotone"

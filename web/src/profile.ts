@@ -11,6 +11,7 @@ import type { ProfilePoint } from "./types";
 export function interpolateTarget(
   points: ProfilePoint[] | undefined,
   t: number,
+  key: "bt" | "ror" = "bt",
 ): number | null {
   if (!points || points.length === 0) return null;
   if (t < points[0].t || t > points[points.length - 1].t) return null;
@@ -25,7 +26,10 @@ export function interpolateTarget(
   }
   const a = points[lo];
   const b = points[hi];
-  if (b.t === a.t) return a.bt;
+  const av = a[key];
+  const bv = b[key];
+  if (av == null || bv == null) return null; // field missing (e.g. older profiles without ror)
+  if (b.t === a.t) return av;
   const frac = (t - a.t) / (b.t - a.t);
-  return a.bt + (b.bt - a.bt) * frac;
+  return av + (bv - av) * frac;
 }

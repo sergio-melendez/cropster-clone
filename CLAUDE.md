@@ -143,7 +143,12 @@ against" selector that overlays the target curve (`RoastChart` `target` prop),
 plus a live Δ-to-target readout and a drift alert (`DELTA_ALERT_C`, default 5°C).
 Delta/alerts are computed client-side from the existing `reading` stream — the
 WebSocket protocol is unchanged. New web files: `RoastProfiles.tsx`, `profile.ts`
-(target interpolation). Profile import needs `python-multipart`.
+(target interpolation). Profile import needs `python-multipart`. Profile points
+are `[{t, bt, ror}]`: RoR is derived from the bean curve at import
+(`_with_ror` in `profile_import.py`, 30s window like the live RoR) for every
+source, and a dashed "Target RoR" line is drawn on the RoR axis when roasting
+against a profile. Profiles saved before this carry only `{t, bt}` and render
+without the RoR line.
 
 Milestone 4 (done): import profiles from Cropster **PDF** roast reports. The PDF
 draws the bean curve as a vector path (~1 pt/s) and prints a coarse 30s table;

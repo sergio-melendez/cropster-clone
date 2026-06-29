@@ -5,8 +5,10 @@ Parsing of external roast-data files is isolated here (the same way `hardware.py
 hides the Phidget). Each parser takes raw bytes and returns the canonical shape the
 rest of the app uses for a target profile:
 
-    points: [{"t": seconds_since_charge, "bt": bean_temp_c}, ...]
+    points: [{"t": seconds_since_charge, "bt": bean_temp_c, "ror": c_per_min}, ...]
     events: [{"t": seconds, "type": str, "label": str}, ...]   (may be empty)
+
+(Parsers return {t, bt}; `parse_profile_file` adds the derived `ror`.)
 
 Supported today: generic CSV (a time column + a bean-temp column) and Artisan
 `.alog` files. Cropster `.crc` is NOT supported here: it is AES-encrypted and can't
@@ -159,6 +161,33 @@ def _normalize(points: list[dict]) -> list[dict]:
     return points
 
 
+# Window for derived rate-of-rise, matching the adapter's live RoR
+# (RoastState.compute_ror in main.py): °C/min over a trailing 30s window.
+_ROR_WINDOW_S = 30.0
+
+
+def _with_ror(points: list[dict]) -> list[dict]:
+    """Add a derived `ror` (°C/min) to each {t, bt} point.
+
+    Computed from the bean-temp curve over a trailing <=30s window, the same way
+    the adapter derives live RoR — so a profile's target RoR is consistent with
+    the RoR shown during a roast, at the resolution of the source curve.
+    """
+    out: list[dict] = []
+    for i, p in enumerate(points):
+        t, bt = p["t"], p["bt"]
+        ror = 0.0
+        j = i
+        while j > 0 and t - points[j - 1]["t"] <= _ROR_WINDOW_S:
+            j -= 1
+        if j < i:
+            dt = t - points[j]["t"]
+            if dt > 0:
+                ror = round((bt - points[j]["bt"]) / dt * 60.0, 1)
+        out.append({"t": t, "bt": bt, "ror": ror})
+    return out
+
+
 # ---- Cropster PDF roast report ----------------------------------------------
 # Cropster's exported PDF draws the bean-temp curve as a VECTOR path (~1 point/
 # second) and also prints a coarse "30-second measurements" table. We extract the
@@ -309,24 +338,27 @@ def parse_profile_file(
 ) -> tuple[str, list[dict], list[dict], str | None]:
     """Dispatch on file extension. Returns (source, points, events, suggested_name).
 
-    `source` is 'csv' | 'artisan' | 'cropster_pdf'. `suggested_name` is a name
-    pulled from the file's contents (PDF only), or None to let the caller fall
-    back to the filename. Raises ValueError on an unsupported extension (notably
-    `.crc`, which is encrypted) or a parse failure.
+    `source` is 'csv' | 'artisan' | 'cropster_pdf'. Points are `[{t, bt, ror}]`
+    (RoR derived from the bean curve). `suggested_name` is a name pulled from the
+    file's contents (PDF only), or None to let the caller fall back to the
+    filename. Raises ValueError on an unsupported extension (notably `.crc`, which
+    is encrypted) or a parse failure.
     """
     name = (filename or "").lower()
     if name.endswith(".alog"):
-        points, events = parse_artisan_alog(data)
-        return "artisan", points, events, None
-    if name.endswith(".csv"):
-        points, events = parse_csv(data)
-        return "csv", points, events, None
-    if name.endswith(".pdf"):
+        source, (points, events), title = "artisan", parse_artisan_alog(data), None
+    elif name.endswith(".csv"):
+        source, (points, events), title = "csv", parse_csv(data), None
+    elif name.endswith(".pdf"):
         points, events, title = parse_cropster_pdf(data)
-        return "cropster_pdf", points, events, title
-    if name.endswith(".crc"):
+        source = "cropster_pdf"
+    elif name.endswith(".crc"):
         raise ValueError(
             "Cropster .crc files are encrypted and can't be imported. "
             "Export the roast as a PDF (or CSV / Artisan .alog) instead."
         )
-    raise ValueError(f"Unsupported file type: {filename!r}. Use .pdf, .csv or .alog.")
+    else:
+        raise ValueError(f"Unsupported file type: {filename!r}. Use .pdf, .csv or .alog.")
+
+    # Derive RoR uniformly from the bean curve for every source.
+    return source, _with_ror(points), events, title

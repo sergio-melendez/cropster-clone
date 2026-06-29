@@ -275,7 +275,7 @@ async def profiles_create(body: ProfileFromRoast):
     roast = storage.get_roast(body.roast_id)
     if roast is None:
         raise HTTPException(status_code=404, detail="roast not found")
-    points = [{"t": p["t"], "bt": p["bt"]} for p in roast["history"]]
+    points = [{"t": p["t"], "bt": p["bt"], "ror": p.get("ror", 0.0)} for p in roast["history"]]
     points = _downsample(points, PROFILE_MAX_POINTS)
     profile_id = storage.save_profile(
         name=body.name,
