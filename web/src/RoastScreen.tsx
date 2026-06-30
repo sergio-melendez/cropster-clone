@@ -112,22 +112,22 @@ export default function RoastScreen({
   markEvent: (type: string, label?: string, bt?: number) => void;
 }) {
   const [commenting, setCommenting] = useState(false);
-  const [confirmStop, setConfirmStop] = useState(false);
+  const [confirm, setConfirm] = useState<null | "stop" | "abort">(null);
   const [secs, setSecs] = useState(3);
   const goals = activeProfile ? computeGoals(activeProfile) : null;
 
-  // Stop needs a deliberate confirmation: a 3s window that auto-cancels (keeps
-  // roasting) if you don't confirm — guards against an accidental Stop.
+  // Stop/Abort need a deliberate confirmation: a 3s window that auto-cancels
+  // (keeps roasting) if you don't confirm — guards against accidental taps.
   useEffect(() => {
-    if (!confirmStop) return;
+    if (!confirm) return;
     setSecs(3);
     const iv = setInterval(() => setSecs((s) => s - 1), 1000);
-    const to = setTimeout(() => setConfirmStop(false), 3000);
+    const to = setTimeout(() => setConfirm(null), 3000);
     return () => {
       clearInterval(iv);
       clearTimeout(to);
     };
-  }, [confirmStop]);
+  }, [confirm]);
 
   // The reference comment we've most recently passed (for highlighting).
   const t = live?.t ?? 0;
@@ -235,10 +235,10 @@ export default function RoastScreen({
           <div style={{ fontSize: 12, color: "#6b7280" }}>Roasting against target</div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-          <button style={{ ...btn, color: "#6b7280" }} onClick={onAbort}>✕ Abort</button>
+          <button style={{ ...btn, color: "#6b7280" }} onClick={() => setConfirm("abort")}>✕ Abort</button>
           <button
             style={{ ...btn, background: "#dc2626", color: "#fff", borderColor: "#dc2626" }}
-            onClick={() => setConfirmStop(true)}
+            onClick={() => setConfirm("stop")}
           >
             ■ Stop
           </button>
@@ -252,29 +252,34 @@ export default function RoastScreen({
         <CommentModal bt={live?.bt ?? null} onClose={() => setCommenting(false)} onSubmit={submit} />
       )}
 
-      {confirmStop && (
+      {confirm && (
         <div
           style={{
             position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)",
             display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50,
           }}
-          onClick={() => setConfirmStop(false)}
+          onClick={() => setConfirm(null)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{ background: "#fff", borderRadius: 12, padding: 24, width: 340, textAlign: "center", boxShadow: "0 10px 40px rgba(0,0,0,0.2)" }}
           >
-            <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>Stop the roast?</div>
+            <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>
+              {confirm === "stop" ? "Stop the roast?" : "Abort the roast?"}
+            </div>
             <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 18 }}>
-              Saves the roast. Auto-cancels in {Math.max(secs, 0)}s if not confirmed.
+              {confirm === "stop"
+                ? "Saves the roast."
+                : "Discards the roast — it won't be saved."}{" "}
+              Auto-cancels in {Math.max(secs, 0)}s if not confirmed.
             </div>
             <button
               style={{ ...btn, width: "100%", background: "#dc2626", color: "#fff", borderColor: "#dc2626", padding: 12, fontSize: 16, marginBottom: 8 }}
-              onClick={() => { setConfirmStop(false); onStop(); }}
+              onClick={() => { const action = confirm; setConfirm(null); action === "stop" ? onStop() : onAbort(); }}
             >
-              ■ Confirm Stop ({Math.max(secs, 0)})
+              {confirm === "stop" ? "■ Confirm Stop" : "✕ Confirm Abort"} ({Math.max(secs, 0)})
             </button>
-            <button style={{ ...btn, width: "100%" }} onClick={() => setConfirmStop(false)}>
+            <button style={{ ...btn, width: "100%" }} onClick={() => setConfirm(null)}>
               Keep roasting
             </button>
           </div>
