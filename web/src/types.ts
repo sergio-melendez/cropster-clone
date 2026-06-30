@@ -20,6 +20,8 @@ export interface SavedRoastMeta {
   duration_s: number;
   max_bt: number | null;
   event_count: number;
+  start_weight?: number | null;
+  end_weight?: number | null;
 }
 
 // A full saved roast, curve + events, for the review view.
@@ -43,6 +45,7 @@ export interface ProfileMeta {
   source: string;       // 'roast' | 'csv' | 'artisan'
   duration_s: number;
   point_count: number;
+  start_weight?: number | null;
 }
 
 // A full target profile, curve + optional milestone events.

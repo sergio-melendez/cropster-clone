@@ -76,14 +76,16 @@ class RoastState:
         self.roasting = False
         self.t0: float | None = None
         self.started_wall: float | None = None  # epoch seconds at charge (for persistence)
+        self.start_weight: float | None = None  # green weight (kg) for this roast
         self.history: list[dict] = []          # [{t, bt, et, ror}, ...]
         self.events: list[dict] = []           # [{t, type, label}, ...]
         self._bt_window: deque = deque()       # (t, bt) for RoR
 
-    def start(self) -> None:
+    def start(self, start_weight: float | None = None) -> None:
         self.roasting = True
         self.t0 = time.monotonic()
         self.started_wall = time.time()
+        self.start_weight = start_weight
         self.history.clear()
         self.events.clear()
         self._bt_window.clear()
@@ -179,17 +181,26 @@ class EventIn(BaseModel):
     type: str
     label: str | None = None
     bt: float | None = None     # bean temp at the comment (logged from the UI)
+    t: float | None = None      # roast time (s) to log at; default = now
+
+
+class StartIn(BaseModel):
+    start_weight: float | None = None
+
+
+class StopIn(BaseModel):
+    end_weight: float | None = None
 
 
 @app.post("/roast/start")
-async def roast_start():
-    state.start()
+async def roast_start(body: StartIn | None = None):
+    state.start(body.start_weight if body else None)
     await manager.broadcast({"type": "roast_started"})
     return {"ok": True, "roasting": True}
 
 
 @app.post("/roast/stop")
-async def roast_stop():
+async def roast_stop(body: StopIn | None = None):
     # Persist the completed roast before we stop. Guard on `roasting` so a
     # repeated /roast/stop is idempotent (history lingers after stop, so without
     # this a second call would save the same roast again). A roast with no
@@ -200,6 +211,8 @@ async def roast_stop():
             started_at=state.started_wall or time.time(),
             history=state.history,
             events=state.events,
+            start_weight=state.start_weight,
+            end_weight=body.end_weight if body else None,
         )
     state.stop()
     await manager.broadcast({"type": "roast_stopped", "roast_id": roast_id})
@@ -218,8 +231,8 @@ async def roast_abort():
 async def roast_event(ev: EventIn):
     if not state.roasting:
         return {"ok": False, "error": "not roasting"}
-    entry = {"t": round(state.elapsed(), 2), "type": ev.type,
-             "label": ev.label or ev.type, "bt": ev.bt}
+    t = round(ev.t if ev.t is not None else state.elapsed(), 2)
+    entry = {"t": max(t, 0.0), "type": ev.type, "label": ev.label or ev.type, "bt": ev.bt}
     state.events.append(entry)
     # NB: send the event's own type as `type_` so it doesn't clobber the message
     # `type: "event"` that the client switches on.
@@ -297,6 +310,7 @@ async def profiles_create(body: ProfileFromRoast):
         points=points,
         events=roast["events"],
         notes=body.notes,
+        start_weight=roast.get("start_weight"),
     )
     return {"ok": True, "id": profile_id}
 
@@ -306,13 +320,15 @@ async def profiles_import(file: UploadFile = File(...)):
     """Import a target profile from an open format (Cropster PDF, CSV, Artisan)."""
     data = await file.read()
     try:
-        source, points, events, suggested = profile_import.parse_profile_file(
+        source, points, events, suggested, start_weight = profile_import.parse_profile_file(
             file.filename or "", data
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     name = suggested or (file.filename or "imported").rsplit(".", 1)[0]
-    profile_id = storage.save_profile(name=name, source=source, points=points, events=events)
+    profile_id = storage.save_profile(
+        name=name, source=source, points=points, events=events, start_weight=start_weight
+    )
     return {"ok": True, "id": profile_id, "source": source, "point_count": len(points)}
 
 

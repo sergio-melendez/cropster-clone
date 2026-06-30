@@ -20,6 +20,7 @@ export default function App() {
   const [activeProfile, setActiveProfile] = useState<Profile | null>(null);
   const [recent, setRecent] = useState<SavedRoastMeta[]>([]);
   const [historyFocus, setHistoryFocus] = useState<number | null>(null);
+  const [startWeight, setStartWeight] = useState("");   // kg (as typed)
 
   // Refresh profile + recent-roast lists when returning to the dashboard or after a save.
   useEffect(() => {
@@ -29,8 +30,14 @@ export default function App() {
 
   const onPickProfile = (id: number | null) => {
     if (id == null) return setActiveProfile(null);
-    getProfile(id).then(setActiveProfile).catch(() => setActiveProfile(null));
+    getProfile(id).then((p) => {
+      setActiveProfile(p);
+      // Prefill the start weight from the profile/PDF when it carries one.
+      if (p.start_weight != null) setStartWeight(String(p.start_weight));
+    }).catch(() => setActiveProfile(null));
   };
+
+  const startRoast = () => start(startWeight ? Number(startWeight) : null);
 
   // Live deviation from the target at the current roast time.
   const target = activeProfile?.points;
@@ -44,7 +51,7 @@ export default function App() {
   };
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 1180, margin: "0 auto", padding: 24, color: "#111827" }}>
+    <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 1480, margin: "0 auto", padding: 24, color: "#111827" }}>
       <header style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
         <h1 style={{ fontSize: 22, margin: 0 }}>Roast Monitor</h1>
         <span
@@ -88,7 +95,7 @@ export default function App() {
           delta={delta}
           alerting={alerting}
           activeProfile={activeProfile}
-          onStop={() => stop()}
+          onStop={(endWeight) => stop(endWeight)}
           onAbort={() => abort()}
           markEvent={markEvent}
         />
@@ -99,9 +106,11 @@ export default function App() {
           profiles={profileList}
           activeProfile={activeProfile}
           onPickProfile={onPickProfile}
+          startWeight={startWeight}
+          onStartWeight={setStartWeight}
           recent={recent}
           onOpenRoast={openRoast}
-          onStart={() => start()}
+          onStart={startRoast}
         />
       )}
     </div>

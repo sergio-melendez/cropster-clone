@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import {
   ComposedChart,
   Line,
@@ -44,12 +45,24 @@ function hasTargetRor(target?: ProfilePoint[]): boolean {
   return !!target && target.some((p) => p.ror != null);
 }
 
-// Short tag for an on-chart marker (full text lives in the comments list).
-const EVENT_TAG: Record<string, string> = {
-  TP: "TP", DRY_END: "DE", FC_START: "FC", FC_END: "FCe", DROP: "Drop", GAS: "Gas",
-};
-function eventTag(ev: RoastEvent): string {
-  return EVENT_TAG[ev.type] ?? "•";
+// Full comment text for an on-chart label: "[m:ss] label @ btº".
+function eventLabelText(ev: RoastEvent): string {
+  const temp = ev.bt != null ? ` @ ${ev.bt.toFixed(0)}°` : "";
+  return `[${fmtTime(ev.t)}] ${ev.label}${temp}`;
+}
+
+// Cascading label: full text near the line's x, staggered down by index so
+// successive comments don't overlap (mirrors Cropster's reference labels).
+function stackedLabel(text: string, idx: number, color: string) {
+  return (p: { viewBox?: { x?: number; y?: number } }) => {
+    const x = (p.viewBox?.x ?? 0) + 3;
+    const y = (p.viewBox?.y ?? 0) + 12 + (idx % 10) * 13;
+    return (
+      <text x={x} y={y} fill={color} fontSize={10} fontWeight={600}>
+        {text}
+      </text>
+    );
+  };
 }
 
 export default function RoastChart({
@@ -57,16 +70,38 @@ export default function RoastChart({
   events,
   target,
   targetEvents,
+  onPointClick,
+  height = 460,
 }: {
   history: RoastPoint[];
   events: RoastEvent[];
   target?: ProfilePoint[];
   targetEvents?: RoastEvent[];
+  onPointClick?: (t: number) => void;
+  height?: number;
 }) {
   const data = buildData(history, target);
+  const dataMaxT = data.length ? Number(data[data.length - 1].t) : 0;
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Map a click's pixel position to a roast time using the plot grid's bounds.
+  // (Decoupled from recharts hover state, which is unreliable to drive.)
+  const handleClick = (e: React.MouseEvent) => {
+    if (!onPointClick || dataMaxT <= 0) return;
+    const grid = wrapRef.current?.querySelector(".recharts-cartesian-grid");
+    const rect = grid?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    const frac = (e.clientX - rect.left) / rect.width;
+    onPointClick(Math.max(0, Math.min(dataMaxT, frac * dataMaxT)));
+  };
+
   return (
-    <ResponsiveContainer width="100%" height={460}>
-      <ComposedChart data={data} margin={{ top: 10, right: 50, bottom: 10, left: 0 }}>
+    <div ref={wrapRef} onClick={onPointClick ? handleClick : undefined} style={{ width: "100%", ...(onPointClick ? { cursor: "crosshair" } : {}) }}>
+    <ResponsiveContainer width="100%" height={height}>
+      <ComposedChart
+        data={data}
+        margin={{ top: 10, right: 50, bottom: 10, left: 0 }}
+      >
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
         <XAxis
           dataKey="t"
@@ -78,6 +113,7 @@ export default function RoastChart({
         <YAxis
           yAxisId="temp"
           domain={[0, 250]}
+          tickCount={11}
           stroke="#6b7280"
           label={{ value: "Temp (°C)", angle: -90, position: "insideLeft", fill: "#6b7280" }}
         />
@@ -85,6 +121,7 @@ export default function RoastChart({
           yAxisId="ror"
           orientation="right"
           domain={[0, 40]}
+          tickCount={9}
           stroke="#16a34a"
           label={{ value: "RoR (°C/min)", angle: 90, position: "insideRight", fill: "#16a34a" }}
         />
@@ -159,7 +196,7 @@ export default function RoastChart({
             x={ev.t}
             stroke="#9ca3af"
             strokeDasharray="2 4"
-            label={{ value: eventTag(ev), position: "insideTopLeft", fill: "#6b7280", fontSize: 11, fontWeight: 600 }}
+            label={stackedLabel(eventLabelText(ev), i, "#6b7280")}
           />
         ))}
         {events.map((ev, i) => (
@@ -169,10 +206,11 @@ export default function RoastChart({
             x={ev.t}
             stroke="#2563eb"
             strokeDasharray="2 2"
-            label={{ value: eventTag(ev), position: "top", fill: "#2563eb", fontSize: 11 }}
+            label={stackedLabel(eventLabelText(ev), i + (targetEvents?.length ?? 0), "#2563eb")}
           />
         ))}
       </ComposedChart>
     </ResponsiveContainer>
+    </div>
   );
 }
