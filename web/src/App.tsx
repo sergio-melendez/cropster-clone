@@ -51,7 +51,7 @@ export default function App() {
   };
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 1180, margin: "0 auto", padding: 24, color: "#111827" }}>
+    <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 1480, margin: "0 auto", padding: 24, color: "#111827" }}>
       <header style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
         <h1 style={{ fontSize: 22, margin: 0 }}>Roast Monitor</h1>
         <span

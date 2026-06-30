@@ -34,14 +34,15 @@ function CommentModal({
   return (
     <div
       style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)",
-        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50,
+        position: "fixed", inset: 0, background: "transparent",
+        display: "flex", alignItems: "flex-start", justifyContent: "flex-start",
+        paddingTop: 150, paddingLeft: 120, zIndex: 50,
       }}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ background: "#fff", borderRadius: 12, padding: 20, width: 340, boxShadow: "0 10px 40px rgba(0,0,0,0.2)" }}
+        style={{ background: "#fff", borderRadius: 12, padding: 20, width: 320, border: "2px solid #ef4444", boxShadow: "0 10px 40px rgba(0,0,0,0.25)" }}
       >
         <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Comment at {fmtTime(at.t)}</div>
         <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>
@@ -185,6 +186,7 @@ export default function RoastScreen({
             target={activeProfile?.points}
             targetEvents={activeProfile?.events}
             onPointClick={(tt) => setCommentAt({ t: tt, bt: btAt(tt) })}
+            height={580}
           />
         </div>
       </div>
