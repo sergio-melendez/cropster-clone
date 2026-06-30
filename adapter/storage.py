@@ -52,10 +52,20 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _add_column(conn: sqlite3.Connection, table: str, col: str, decl: str) -> None:
+    """Idempotently add a column to an existing table (simple forward migration)."""
+    existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+    if col not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+
+
 def init_db() -> None:
-    """Create the table if it doesn't exist. Safe to call on every startup."""
+    """Create tables if needed and apply forward migrations. Safe on every startup."""
     with _connect() as conn:
         conn.executescript(_SCHEMA)
+        _add_column(conn, "roasts", "start_weight", "REAL")
+        _add_column(conn, "roasts", "end_weight", "REAL")
+        _add_column(conn, "profiles", "start_weight", "REAL")
 
 
 def save_roast(
@@ -63,6 +73,8 @@ def save_roast(
     history: list[dict],
     events: list[dict],
     finished_at: float | None = None,
+    start_weight: float | None = None,
+    end_weight: float | None = None,
 ) -> int:
     """Persist one completed roast and return its new id."""
     finished = finished_at if finished_at is not None else time.time()
@@ -71,8 +83,9 @@ def save_roast(
     with _connect() as conn:
         cur = conn.execute(
             "INSERT INTO roasts "
-            "(started_at, finished_at, duration_s, max_bt, points_json, events_json) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(started_at, finished_at, duration_s, max_bt, points_json, events_json, "
+            " start_weight, end_weight) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 started_at,
                 finished,
@@ -80,6 +93,8 @@ def save_roast(
                 max_bt,
                 json.dumps(history),
                 json.dumps(events),
+                start_weight,
+                end_weight,
             ),
         )
         return int(cur.lastrowid)
@@ -89,7 +104,8 @@ def list_roasts() -> list[dict]:
     """Return roast summaries (no curve), newest first."""
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT id, started_at, finished_at, duration_s, max_bt, events_json "
+            "SELECT id, started_at, finished_at, duration_s, max_bt, events_json, "
+            "       start_weight, end_weight "
             "FROM roasts ORDER BY started_at DESC"
         ).fetchall()
     return [
@@ -100,6 +116,8 @@ def list_roasts() -> list[dict]:
             "duration_s": r["duration_s"],
             "max_bt": r["max_bt"],
             "event_count": len(json.loads(r["events_json"])),
+            "start_weight": r["start_weight"],
+            "end_weight": r["end_weight"],
         }
         for r in rows
     ]
@@ -117,6 +135,8 @@ def get_roast(roast_id: int) -> dict | None:
         "finished_at": r["finished_at"],
         "duration_s": r["duration_s"],
         "max_bt": r["max_bt"],
+        "start_weight": r["start_weight"],
+        "end_weight": r["end_weight"],
         "history": json.loads(r["points_json"]),
         "events": json.loads(r["events_json"]),
     }
@@ -140,6 +160,7 @@ def save_profile(
     points: list[dict],
     events: list[dict] | None = None,
     notes: str | None = None,
+    start_weight: float | None = None,
 ) -> int:
     """Persist one target profile and return its new id."""
     events = events or []
@@ -147,8 +168,9 @@ def save_profile(
     with _connect() as conn:
         cur = conn.execute(
             "INSERT INTO profiles "
-            "(name, created_at, source, duration_s, notes, points_json, events_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(name, created_at, source, duration_s, notes, points_json, events_json, "
+            " start_weight) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 name,
                 time.time(),
@@ -157,6 +179,7 @@ def save_profile(
                 notes,
                 json.dumps(points),
                 json.dumps(events),
+                start_weight,
             ),
         )
         return int(cur.lastrowid)
@@ -166,7 +189,7 @@ def list_profiles() -> list[dict]:
     """Return profile summaries (no curve), newest first."""
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT id, name, created_at, source, duration_s, points_json "
+            "SELECT id, name, created_at, source, duration_s, points_json, start_weight "
             "FROM profiles ORDER BY created_at DESC"
         ).fetchall()
     return [
@@ -177,6 +200,7 @@ def list_profiles() -> list[dict]:
             "source": r["source"],
             "duration_s": r["duration_s"],
             "point_count": len(json.loads(r["points_json"])),
+            "start_weight": r["start_weight"],
         }
         for r in rows
     ]
@@ -197,6 +221,7 @@ def get_profile(profile_id: int) -> dict | None:
         "source": r["source"],
         "duration_s": r["duration_s"],
         "notes": r["notes"],
+        "start_weight": r["start_weight"],
         "points": json.loads(r["points_json"]),
         "events": json.loads(r["events_json"]),
     }

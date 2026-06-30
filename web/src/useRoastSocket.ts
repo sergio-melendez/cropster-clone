@@ -74,15 +74,17 @@ export function useRoastSocket() {
     };
   }, []);
 
-  const start = () => fetch(`${API}/roast/start`, { method: "POST" });
-  const stop = () => fetch(`${API}/roast/stop`, { method: "POST" });
-  const abort = () => fetch(`${API}/roast/abort`, { method: "POST" });
-  const markEvent = (type: string, label?: string, bt?: number) =>
-    fetch(`${API}/roast/event`, {
+  const post = (path: string, body?: object) =>
+    fetch(`${API}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, label, bt }),
+      body: JSON.stringify(body ?? {}),
     });
+  const start = (startWeight?: number | null) => post("/roast/start", { start_weight: startWeight ?? null });
+  const stop = (endWeight?: number | null) => post("/roast/stop", { end_weight: endWeight ?? null });
+  const abort = () => post("/roast/abort");
+  const markEvent = (type: string, label?: string, bt?: number, t?: number) =>
+    post("/roast/event", { type, label, bt, t });
 
   return { connected, roasting, history, events, live, source, lastSavedId, start, stop, abort, markEvent };
 }

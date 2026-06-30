@@ -125,6 +125,20 @@ Milestone 1 (done): live BT/ET/RoR curve over WebSocket, start/stop, event
 markers (Turning Point, Dry End, First Crack, Drop), all working on the
 simulator and wired for the real 1048.
 
+Milestone 7 (done): roast weights + click-to-comment + logged-comment list.
+- Weights: `profiles.start_weight` (parsed from the PDF — "Peso inicial"/"Tamaño
+  de la partida ideal") prefills the Dashboard "Start wt" input; `roasts` gain
+  `start_weight`/`end_weight` (end captured in the Stop confirm modal; History
+  shows start → end + weight-loss % via `weightLoss` in `profile.ts`). Storage
+  uses a forward migration (`_add_column` in `storage.py`). `/roast/start` and
+  `/roast/stop` take the weights; `computeGoals` shows start weight.
+- Click-to-comment: `RoastChart` `onPointClick` maps a click's x-pixel to a roast
+  time via the `.recharts-cartesian-grid` rect (recharts hover state is unreliable
+  to drive). `RoastScreen` opens the comment modal at that time (temp interpolated
+  from the live curve); `/roast/event` + `markEvent` take an explicit `t`.
+- Logged comments: a "Roast comments" sidebar list of events you log during the
+  roast (plus the existing chart markers). `EventIn.bt`/`.t` already supported.
+
 Milestone 6 (done): two-screen Cropster-style UX. The web app splits into a
 **Dashboard** (`web/src/Dashboard.tsx`, pre-roast: profile selector, computed
 `computeGoals` table, comments, Profile/Chart tabs, recent-roasts list, live

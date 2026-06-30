@@ -66,3 +66,9 @@ export function computeGoals(p: Profile): ProfileGoals {
     endBt,
   };
 }
+
+/** Weight-loss percentage from start/end weights, or null if either is missing. */
+export function weightLoss(start?: number | null, end?: number | null): number | null {
+  if (start == null || end == null || start <= 0) return null;
+  return ((start - end) / start) * 100;
+}

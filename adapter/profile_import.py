@@ -260,6 +260,19 @@ def _comment_type(label: str) -> str:
     return "GENERIC"
 
 
+def _cropster_start_weight(text: str) -> float | None:
+    """Green start weight (kg) from the PDF, if present."""
+    m = re.search(r"Peso inicial\s*/\s*final\s*([\d.,]+)\s*kg", text, re.I)
+    if not m:
+        m = re.search(r"Tama[nñ]o de la partida ideal\s*([\d.,]+)\s*kg", text, re.I)
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(",", "."))
+    except ValueError:
+        return None
+
+
 def _cropster_comments(text: str) -> list[dict]:
     """All time-stamped comments/annotations from the PDF: {t, type, label, bt}."""
     out: list[dict] = []
@@ -537,8 +550,8 @@ def _parse_by_axes(reader, text: str):
     return points, _cropster_events(text, total_s)
 
 
-def parse_cropster_pdf(data: bytes) -> tuple[list[dict], list[dict], str | None]:
-    """Extract the high-res bean curve (+ RoR, events, title) from a Cropster PDF.
+def parse_cropster_pdf(data: bytes) -> tuple[list[dict], list[dict], str | None, float | None]:
+    """Extract the high-res bean curve (+ RoR, events, title, start weight).
 
     Two layouts are supported: the lot **roast report** (has a 30s table → BT
     calibrated against it) and the **profile/"Tuestes"** export (no table → BT and
@@ -603,14 +616,14 @@ def parse_cropster_pdf(data: bytes) -> tuple[list[dict], list[dict], str | None]
         step = len(points) / _CROPSTER_MAX_POINTS
         idxs = sorted({int(i * step) for i in range(_CROPSTER_MAX_POINTS)} | {len(points) - 1})
         points = [points[i] for i in idxs]
-    return points, events, title
+    return points, events, title, _cropster_start_weight(text)
 
 
 NATIVE_FORMAT = "roastmonitor.profile"
 
 
-def parse_native(data: bytes) -> tuple[list[dict], list[dict], str | None]:
-    """Parse our own exported profile JSON. Returns (points, events, name)."""
+def parse_native(data: bytes) -> tuple[list[dict], list[dict], str | None, float | None]:
+    """Parse our own exported profile JSON. Returns (points, events, name, start_weight)."""
     try:
         obj = json.loads(data.decode("utf-8"))
     except (ValueError, UnicodeDecodeError) as e:
@@ -624,29 +637,31 @@ def parse_native(data: bytes) -> tuple[list[dict], list[dict], str | None]:
     if not points:
         raise ValueError("Profile export has no points.")
     events = obj.get("events") or []
-    return points, events, obj.get("name")
+    return points, events, obj.get("name"), obj.get("start_weight")
 
 
 def parse_profile_file(
     filename: str, data: bytes
-) -> tuple[str, list[dict], list[dict], str | None]:
-    """Dispatch on file extension. Returns (source, points, events, suggested_name).
+) -> tuple[str, list[dict], list[dict], str | None, float | None]:
+    """Dispatch on file extension.
 
-    `source` is 'csv' | 'artisan' | 'cropster_pdf' | 'native'. Points are
-    `[{t, bt, ror}]`. `suggested_name` is a name pulled from the file's contents
-    (PDF / native), or None to fall back to the filename. Raises ValueError on an
-    unsupported extension (notably `.crc`, which is encrypted) or a parse failure.
+    Returns (source, points, events, suggested_name, start_weight). `source` is
+    'csv' | 'artisan' | 'cropster_pdf' | 'native'. Points are `[{t, bt, ror}]`.
+    `suggested_name`/`start_weight` come from the file's contents (PDF / native)
+    or are None. Raises ValueError on an unsupported extension (notably `.crc`,
+    which is encrypted) or a parse failure.
     """
     name = (filename or "").lower()
+    start_weight: float | None = None
     if name.endswith(".json"):
-        points, events, title = parse_native(data)
+        points, events, title, start_weight = parse_native(data)
         source = "native"
     elif name.endswith(".alog"):
         source, (points, events), title = "artisan", parse_artisan_alog(data), None
     elif name.endswith(".csv"):
         source, (points, events), title = "csv", parse_csv(data), None
     elif name.endswith(".pdf"):
-        points, events, title = parse_cropster_pdf(data)
+        points, events, title, start_weight = parse_cropster_pdf(data)
         source = "cropster_pdf"
     elif name.endswith(".crc"):
         raise ValueError(
@@ -659,4 +674,4 @@ def parse_profile_file(
         )
 
     # Derive RoR from the bean curve unless the source already carries it.
-    return source, _with_ror(points), events, title
+    return source, _with_ror(points), events, title, start_weight

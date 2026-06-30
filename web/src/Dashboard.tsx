@@ -23,6 +23,8 @@ export default function Dashboard({
   profiles,
   activeProfile,
   onPickProfile,
+  startWeight,
+  onStartWeight,
   recent,
   onOpenRoast,
   onStart,
@@ -32,6 +34,8 @@ export default function Dashboard({
   profiles: ProfileMeta[];
   activeProfile: Profile | null;
   onPickProfile: (id: number | null) => void;
+  startWeight: string;
+  onStartWeight: (v: string) => void;
   recent: SavedRoastMeta[];
   onOpenRoast: (id: number) => void;
   onStart: () => void;
@@ -79,6 +83,13 @@ export default function Dashboard({
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
+          <label style={{ fontSize: 13, color: "#6b7280" }}>Start wt</label>
+          <input
+            type="number" inputMode="decimal" placeholder="kg" value={startWeight}
+            onChange={(e) => onStartWeight(e.target.value)}
+            style={{ ...btn, fontWeight: 500, width: 90 }}
+          />
+          <span style={{ fontSize: 13, color: "#6b7280" }}>kg</span>
         </div>
 
         {!activeProfile ? (
@@ -107,6 +118,7 @@ export default function Dashboard({
             {tab === "profile" && goals ? (
               <>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#6b7280", marginBottom: 4 }}>Goals</div>
+                {startWeight && <GoalRow label="Start weight" value={`${startWeight} kg`} />}
                 {goals.chargeBt != null && <GoalRow label="Charge bean temp" value={`${goals.chargeBt.toFixed(1)}°`} />}
                 {goals.turningPoint && <GoalRow label="Turning point" value={`${fmtTime(goals.turningPoint.t)} · ${goals.turningPoint.bt?.toFixed(1)}°`} />}
                 {goals.dryEnd && <GoalRow label="Dry end" value={`${fmtTime(goals.dryEnd.t)} · ${goals.dryEnd.bt?.toFixed(1)}°`} />}

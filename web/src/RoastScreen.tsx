@@ -21,11 +21,11 @@ function GoalRow({ label, value }: { label: string; value: string }) {
 }
 
 function CommentModal({
-  bt,
+  at,
   onClose,
   onSubmit,
 }: {
-  bt: number | null;
+  at: { t: number; bt: number | null };
   onClose: () => void;
   onSubmit: (type: string, label: string) => void;
 }) {
@@ -43,9 +43,9 @@ function CommentModal({
         onClick={(e) => e.stopPropagation()}
         style={{ background: "#fff", borderRadius: 12, padding: 20, width: 340, boxShadow: "0 10px 40px rgba(0,0,0,0.2)" }}
       >
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Comment at</div>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Comment at {fmtTime(at.t)}</div>
         <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>
-          {bt != null ? `${bt.toFixed(1)} °C` : "—"}
+          {at.bt != null ? `${at.bt.toFixed(1)} °C` : "—"}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
           {COMMENT_PRESETS.map((p) => (
@@ -107,19 +107,37 @@ export default function RoastScreen({
   delta: number | null;
   alerting: boolean;
   activeProfile: Profile | null;
-  onStop: () => void;
+  onStop: (endWeight?: number | null) => void;
   onAbort: () => void;
-  markEvent: (type: string, label?: string, bt?: number) => void;
+  markEvent: (type: string, label?: string, bt?: number, t?: number) => void;
 }) {
-  const [commenting, setCommenting] = useState(false);
+  const [commentAt, setCommentAt] = useState<{ t: number; bt: number | null } | null>(null);
   const [confirm, setConfirm] = useState<null | "stop" | "abort">(null);
   const [secs, setSecs] = useState(3);
+  const [endWeight, setEndWeight] = useState("");
+  const [engaged, setEngaged] = useState(false);   // user is typing end weight → pause auto-cancel
   const goals = activeProfile ? computeGoals(activeProfile) : null;
+  const askConfirm = (a: "stop" | "abort") => { setEngaged(false); setConfirm(a); };
+
+  // Bean temp on the live curve at an arbitrary time (for click-to-comment).
+  const btAt = (tt: number): number | null => {
+    if (!history.length) return live?.bt ?? null;
+    if (tt >= history[history.length - 1].t) return history[history.length - 1].bt;
+    if (tt <= history[0].t) return history[0].bt;
+    for (let i = 1; i < history.length; i++) {
+      if (history[i].t >= tt) {
+        const a = history[i - 1], b = history[i];
+        const f = (tt - a.t) / (b.t - a.t || 1);
+        return a.bt + (b.bt - a.bt) * f;
+      }
+    }
+    return live?.bt ?? null;
+  };
 
   // Stop/Abort need a deliberate confirmation: a 3s window that auto-cancels
   // (keeps roasting) if you don't confirm — guards against accidental taps.
   useEffect(() => {
-    if (!confirm) return;
+    if (!confirm || engaged) return;   // paused while typing end weight
     setSecs(3);
     const iv = setInterval(() => setSecs((s) => s - 1), 1000);
     const to = setTimeout(() => setConfirm(null), 3000);
@@ -127,7 +145,7 @@ export default function RoastScreen({
       clearInterval(iv);
       clearTimeout(to);
     };
-  }, [confirm]);
+  }, [confirm, engaged]);
 
   // The reference comment we've most recently passed (for highlighting).
   const t = live?.t ?? 0;
@@ -138,8 +156,8 @@ export default function RoastScreen({
   });
 
   const submit = (type: string, label: string) => {
-    markEvent(type, label, live?.bt ?? undefined);
-    setCommenting(false);
+    if (commentAt) markEvent(type, label, commentAt.bt ?? undefined, commentAt.t);
+    setCommentAt(null);
   };
 
   return (
@@ -149,12 +167,13 @@ export default function RoastScreen({
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
           <button
             style={{ ...btn, background: "#111827", color: "#fff", borderColor: "#111827" }}
-            onClick={() => setCommenting(true)}
+            onClick={() => setCommentAt({ t: live?.t ?? 0, bt: live?.bt ?? null })}
           >
             ＋ Comment
           </button>
+          <span style={{ fontSize: 12, color: "#9ca3af" }}>— or click the chart to comment at that time</span>
           {alerting && delta != null && (
-            <span style={{ color: "#991b1b", fontWeight: 600, fontSize: 14 }}>
+            <span style={{ color: "#991b1b", fontWeight: 600, fontSize: 14, marginLeft: "auto" }}>
               ⚠ {Math.abs(delta).toFixed(1)}° {delta > 0 ? "above" : "below"} target
             </span>
           )}
@@ -165,6 +184,7 @@ export default function RoastScreen({
             events={events}
             target={activeProfile?.points}
             targetEvents={activeProfile?.events}
+            onPointClick={(tt) => setCommentAt({ t: tt, bt: btAt(tt) })}
           />
         </div>
       </div>
@@ -209,6 +229,19 @@ export default function RoastScreen({
           </div>
         )}
 
+        {events.length > 0 && (
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, maxHeight: 200, overflowY: "auto" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Roast comments</div>
+            {events.map((e, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "4px 8px" }}>
+                <span style={{ color: "#6b7280", fontVariantNumeric: "tabular-nums" }}>{fmtTime(e.t)}</span>
+                <span style={{ flex: 1, margin: "0 8px" }}>{e.label}</span>
+                <span style={{ color: "#6b7280" }}>{e.bt != null ? `${e.bt.toFixed(0)}°` : ""}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: "10px 16px", display: "flex", flexDirection: "column", gap: 4 }}>
           {[
             { label: "Bean temp °C", value: live ? live.bt.toFixed(1) : "--", color: "#dc2626" },
@@ -235,10 +268,10 @@ export default function RoastScreen({
           <div style={{ fontSize: 12, color: "#6b7280" }}>Roasting against target</div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-          <button style={{ ...btn, color: "#6b7280" }} onClick={() => setConfirm("abort")}>✕ Abort</button>
+          <button style={{ ...btn, color: "#6b7280" }} onClick={() => askConfirm("abort")}>✕ Abort</button>
           <button
             style={{ ...btn, background: "#dc2626", color: "#fff", borderColor: "#dc2626" }}
-            onClick={() => setConfirm("stop")}
+            onClick={() => askConfirm("stop")}
           >
             ■ Stop
           </button>
@@ -248,8 +281,8 @@ export default function RoastScreen({
         </div>
       </div>
 
-      {commenting && (
-        <CommentModal bt={live?.bt ?? null} onClose={() => setCommenting(false)} onSubmit={submit} />
+      {commentAt && (
+        <CommentModal at={commentAt} onClose={() => setCommentAt(null)} onSubmit={submit} />
       )}
 
       {confirm && (
@@ -267,15 +300,29 @@ export default function RoastScreen({
             <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>
               {confirm === "stop" ? "Stop the roast?" : "Abort the roast?"}
             </div>
-            <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 18 }}>
+            <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
               {confirm === "stop"
                 ? "Saves the roast."
                 : "Discards the roast — it won't be saved."}{" "}
               Auto-cancels in {Math.max(secs, 0)}s if not confirmed.
             </div>
+            {confirm === "stop" && (
+              <input
+                type="number" inputMode="decimal" placeholder="End weight (kg, optional)"
+                value={endWeight}
+                onChange={(e) => setEndWeight(e.target.value)}
+                onFocus={() => setEngaged(true)}   /* stop the auto-cancel countdown while typing */
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14, marginBottom: 12, boxSizing: "border-box" }}
+              />
+            )}
             <button
               style={{ ...btn, width: "100%", background: "#dc2626", color: "#fff", borderColor: "#dc2626", padding: 12, fontSize: 16, marginBottom: 8 }}
-              onClick={() => { const action = confirm; setConfirm(null); action === "stop" ? onStop() : onAbort(); }}
+              onClick={() => {
+                const action = confirm;
+                setConfirm(null);
+                if (action === "stop") onStop(endWeight ? Number(endWeight) : null);
+                else onAbort();
+              }}
             >
               {confirm === "stop" ? "■ Confirm Stop" : "✕ Confirm Abort"} ({Math.max(secs, 0)})
             </button>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import RoastChart from "./RoastChart";
 import { createProfileFromRoast, deleteRoast, getRoast, listRoasts } from "./api";
+import { weightLoss } from "./profile";
 import type { SavedRoast, SavedRoastMeta } from "./types";
 
 function fmtDuration(s: number): string {
@@ -175,6 +176,17 @@ export default function RoastHistory({
                   {fmtDate(selected.started_at)} · {fmtDuration(selected.duration_s)} ·
                   peak {selected.max_bt != null ? `${selected.max_bt.toFixed(1)}°` : "--"}
                 </div>
+                {(selected.start_weight != null || selected.end_weight != null) && (
+                  <div style={{ fontSize: 13, color: "#6b7280" }}>
+                    {selected.start_weight != null ? `${selected.start_weight} kg` : "--"}
+                    {" → "}
+                    {selected.end_weight != null ? `${selected.end_weight} kg` : "--"}
+                    {(() => {
+                      const wl = weightLoss(selected.start_weight, selected.end_weight);
+                      return wl != null ? ` · −${wl.toFixed(1)}% loss` : "";
+                    })()}
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => onSaveAsProfile(selected)}
