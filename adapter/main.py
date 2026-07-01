@@ -35,6 +35,7 @@ PROFILE_MAX_POINTS = 300       # downsample a roast's curve to at most this many
 
 SAMPLE_HZ = 2.0                 # readings per second
 ROR_WINDOW_S = 30.0            # window for rate-of-rise (delta BT over time)
+DEVICE_TIMEOUT_S = 3.0        # no successful read for this long -> source considered lost
 
 # ---- source selection --------------------------------------------------------
 # Default is the simulator. To use the real Phidget 1048, start the adapter with:
@@ -77,6 +78,7 @@ class RoastState:
         self.t0: float | None = None
         self.started_wall: float | None = None  # epoch seconds at charge (for persistence)
         self.start_weight: float | None = None  # green weight (kg) for this roast
+        self.source_ok: bool = True             # False when the source (probe) has dropped
         self.history: list[dict] = []          # [{t, bt, et, ror}, ...]
         self.events: list[dict] = []           # [{t, type, label}, ...]
         self._bt_window: deque = deque()       # (t, bt) for RoR
@@ -141,20 +143,45 @@ manager = ConnectionManager()
 
 
 async def sampler() -> None:
-    """Background loop: sample the source, compute RoR, broadcast."""
+    """Background loop: sample the source, compute RoR, broadcast.
+
+    Resilient to the source failing (e.g. the Phidget USB unplugged mid-roast):
+    a read exception never escapes the loop. `source.ok` flips False after
+    DEVICE_TIMEOUT_S of continuous failures so the UI can warn; it clears as soon
+    as a read succeeds again (libphidget22 auto-reattaches on replug).
+    """
     interval = 1.0 / SAMPLE_HZ
+    last_ok = time.monotonic()
+    last_reading: dict | None = None
     while True:
-        reading = source.read()
+        try:
+            last_reading = source.read()
+            last_ok = time.monotonic()
+            state.source_ok = True
+        except Exception:
+            if time.monotonic() - last_ok > DEVICE_TIMEOUT_S:
+                state.source_ok = False
+        reading = last_reading or {"bt": None, "et": None}
+
         if state.roasting:
             t = round(state.elapsed(), 2)
-            ror = state.compute_ror(t, reading["bt"])
-            point = {"t": t, "bt": reading["bt"], "et": reading["et"], "ror": ror}
-            state.history.append(point)
-            await manager.broadcast({"type": "reading", **point, "roasting": True})
+            # Only extend the curve with real readings; leave a gap during an outage.
+            if state.source_ok and reading["bt"] is not None:
+                ror = state.compute_ror(t, reading["bt"])
+                point = {"t": t, "bt": reading["bt"], "et": reading["et"], "ror": ror}
+                state.history.append(point)
+                await manager.broadcast({"type": "reading", **point, "roasting": True,
+                                         "source_ok": True})
+            else:
+                await manager.broadcast(
+                    {"type": "reading", "t": t, "bt": reading["bt"], "et": reading["et"],
+                     "ror": 0.0, "roasting": True, "source_ok": state.source_ok}
+                )
         else:
             await manager.broadcast(
                 {"type": "reading", "t": None, "bt": reading["bt"],
-                 "et": reading["et"], "ror": 0.0, "roasting": False}
+                 "et": reading["et"], "ror": 0.0, "roasting": False,
+                 "source_ok": state.source_ok}
             )
         await asyncio.sleep(interval)
 
@@ -353,7 +380,7 @@ async def ws_endpoint(ws: WebSocket):
     # Send current history so a late-joining client catches up.
     await ws.send_json({"type": "snapshot", "history": state.history,
                         "events": state.events, "roasting": state.roasting,
-                        "source": source.label})
+                        "source": source.label, "source_ok": state.source_ok})
     try:
         while True:
             await ws.receive_text()  # keepalive / ignore client messages

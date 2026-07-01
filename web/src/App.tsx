@@ -12,7 +12,7 @@ import type { Profile, ProfileMeta, SavedRoastMeta } from "./types";
 type View = "dashboard" | "history" | "profiles";
 
 export default function App() {
-  const { connected, roasting, history, events, live, source, lastSavedId, start, stop, abort, markEvent } =
+  const { connected, roasting, history, events, live, source, sourceOk, lastSavedId, start, stop, abort, markEvent } =
     useRoastSocket();
   const [view, setView] = useState<View>("dashboard");
 
@@ -95,6 +95,7 @@ export default function App() {
           delta={delta}
           alerting={alerting}
           activeProfile={activeProfile}
+          sourceOk={sourceOk}
           onStop={(endWeight) => stop(endWeight)}
           onAbort={() => abort()}
           markEvent={markEvent}

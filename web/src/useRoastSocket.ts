@@ -15,6 +15,7 @@ export function useRoastSocket() {
   const [events, setEvents] = useState<RoastEvent[]>([]);
   const [live, setLive] = useState<RoastPoint | null>(null);
   const [source, setSource] = useState<string | null>(null);
+  const [sourceOk, setSourceOk] = useState(true);   // false when the probe/source drops
   // Bumps each time a roast is saved, so the history view can refresh.
   const [lastSavedId, setLastSavedId] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -40,9 +41,11 @@ export function useRoastSocket() {
             setEvents(msg.events ?? []);
             setRoasting(msg.roasting);
             if (msg.source) setSource(msg.source);
+            if (msg.source_ok != null) setSourceOk(msg.source_ok);
             break;
           case "reading": {
             setRoasting(msg.roasting);
+            if (msg.source_ok != null) setSourceOk(msg.source_ok);
             const pt: RoastPoint = { t: msg.t, bt: msg.bt, et: msg.et, ror: msg.ror };
             setLive(pt);
             if (msg.roasting && msg.t != null) {
@@ -86,5 +89,5 @@ export function useRoastSocket() {
   const markEvent = (type: string, label?: string, bt?: number, t?: number) =>
     post("/roast/event", { type, label, bt, t });
 
-  return { connected, roasting, history, events, live, source, lastSavedId, start, stop, abort, markEvent };
+  return { connected, roasting, history, events, live, source, sourceOk, lastSavedId, start, stop, abort, markEvent };
 }

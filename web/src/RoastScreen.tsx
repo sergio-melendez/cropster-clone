@@ -98,6 +98,7 @@ export default function RoastScreen({
   delta,
   alerting,
   activeProfile,
+  sourceOk,
   onStop,
   onAbort,
   markEvent,
@@ -108,6 +109,7 @@ export default function RoastScreen({
   delta: number | null;
   alerting: boolean;
   activeProfile: Profile | null;
+  sourceOk: boolean;
   onStop: (endWeight?: number | null) => void;
   onAbort: () => void;
   markEvent: (type: string, label?: string, bt?: number, t?: number) => void;
@@ -163,6 +165,17 @@ export default function RoastScreen({
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16 }}>
+      {!sourceOk && (
+        <div
+          style={{
+            gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10,
+            padding: "12px 18px", borderRadius: 10,
+            background: "#dc2626", color: "#fff", fontWeight: 700, fontSize: 15,
+          }}
+        >
+          ⚠ Probe disconnected — reconnect the USB cable. The roast timer keeps running.
+        </div>
+      )}
       {/* Center: chart + add-comment + alert */}
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
