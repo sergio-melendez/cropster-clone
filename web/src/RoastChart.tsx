@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import {
   ComposedChart,
   Line,
@@ -70,33 +69,20 @@ export default function RoastChart({
   events,
   target,
   targetEvents,
-  onPointClick,
+  onChartClick,
   height = 460,
 }: {
   history: RoastPoint[];
   events: RoastEvent[];
   target?: ProfilePoint[];
   targetEvents?: RoastEvent[];
-  onPointClick?: (t: number) => void;
+  onChartClick?: () => void;
   height?: number;
 }) {
   const data = buildData(history, target);
-  const dataMaxT = data.length ? Number(data[data.length - 1].t) : 0;
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  // Map a click's pixel position to a roast time using the plot grid's bounds.
-  // (Decoupled from recharts hover state, which is unreliable to drive.)
-  const handleClick = (e: React.MouseEvent) => {
-    if (!onPointClick || dataMaxT <= 0) return;
-    const grid = wrapRef.current?.querySelector(".recharts-cartesian-grid");
-    const rect = grid?.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
-    const frac = (e.clientX - rect.left) / rect.width;
-    onPointClick(Math.max(0, Math.min(dataMaxT, frac * dataMaxT)));
-  };
 
   return (
-    <div ref={wrapRef} onClick={onPointClick ? handleClick : undefined} style={{ width: "100%", ...(onPointClick ? { cursor: "crosshair" } : {}) }}>
+    <div onClick={onChartClick} style={{ width: "100%", ...(onChartClick ? { cursor: "crosshair" } : {}) }}>
     <ResponsiveContainer width="100%" height={height}>
       <ComposedChart
         data={data}

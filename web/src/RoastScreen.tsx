@@ -122,20 +122,8 @@ export default function RoastScreen({
   const goals = activeProfile ? computeGoals(activeProfile) : null;
   const askConfirm = (a: "stop" | "abort") => { setEngaged(false); setConfirm(a); };
 
-  // Bean temp on the live curve at an arbitrary time (for click-to-comment).
-  const btAt = (tt: number): number | null => {
-    if (!history.length) return live?.bt ?? null;
-    if (tt >= history[history.length - 1].t) return history[history.length - 1].bt;
-    if (tt <= history[0].t) return history[0].bt;
-    for (let i = 1; i < history.length; i++) {
-      if (history[i].t >= tt) {
-        const a = history[i - 1], b = history[i];
-        const f = (tt - a.t) / (b.t - a.t || 1);
-        return a.bt + (b.bt - a.bt) * f;
-      }
-    }
-    return live?.bt ?? null;
-  };
+  // A comment (from the button or a chart click) is logged at the current moment.
+  const commentNow = () => setCommentAt({ t: live?.t ?? 0, bt: live?.bt ?? null });
 
   // Stop/Abort need a deliberate confirmation: a 3s window that auto-cancels
   // (keeps roasting) if you don't confirm — guards against accidental taps.
@@ -181,11 +169,11 @@ export default function RoastScreen({
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
           <button
             style={{ ...btn, background: "#111827", color: "#fff", borderColor: "#111827" }}
-            onClick={() => setCommentAt({ t: live?.t ?? 0, bt: live?.bt ?? null })}
+            onClick={commentNow}
           >
             ＋ Comment
           </button>
-          <span style={{ fontSize: 12, color: "#9ca3af" }}>— or click the chart to comment at that time</span>
+          <span style={{ fontSize: 12, color: "#9ca3af" }}>— or click the chart to add a comment</span>
           {alerting && delta != null && (
             <span style={{ color: "#991b1b", fontWeight: 600, fontSize: 14, marginLeft: "auto" }}>
               ⚠ {Math.abs(delta).toFixed(1)}° {delta > 0 ? "above" : "below"} target
@@ -198,7 +186,7 @@ export default function RoastScreen({
             events={events}
             target={activeProfile?.points}
             targetEvents={activeProfile?.events}
-            onPointClick={(tt) => setCommentAt({ t: tt, bt: btAt(tt) })}
+            onChartClick={commentNow}
             height={580}
           />
         </div>
