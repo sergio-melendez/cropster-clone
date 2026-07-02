@@ -125,6 +125,14 @@ Milestone 1 (done): live BT/ET/RoR curve over WebSocket, start/stop, event
 markers (Turning Point, Dry End, First Crack, Drop), all working on the
 simulator and wired for the real 1048.
 
+Milestone 8 (done): device-disconnect resilience. The `sampler()` loop wraps
+`source.read()` in try/except so a Phidget unplug (getTemperature raising) can no
+longer kill the task / freeze the stream. After `DEVICE_TIMEOUT_S` (3s) of failed
+reads, `state.source_ok` flips False and is broadcast on `reading`/`snapshot`
+(`useRoastSocket` exposes `sourceOk`); during a roast `RoastScreen` shows a red
+"Probe disconnected — reconnect the USB cable" banner (timer keeps running, curve
+gets a gap). Clears automatically when reads resume (libphidget22 auto-reattaches).
+
 Milestone 7 (done): roast weights + click-to-comment + logged-comment list.
 - Weights: `profiles.start_weight` (parsed from the PDF — "Peso inicial"/"Tamaño
   de la partida ideal") prefills the Dashboard "Start wt" input; `roasts` gain

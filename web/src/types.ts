@@ -56,8 +56,8 @@ export interface Profile extends Omit<ProfileMeta, "point_count"> {
 }
 
 export type WsMessage =
-  | ({ type: "reading"; roasting: boolean } & Partial<RoastPoint>)
-  | { type: "snapshot"; history: RoastPoint[]; events: RoastEvent[]; roasting: boolean; source?: string }
+  | ({ type: "reading"; roasting: boolean; source_ok?: boolean } & Partial<RoastPoint>)
+  | { type: "snapshot"; history: RoastPoint[]; events: RoastEvent[]; roasting: boolean; source?: string; source_ok?: boolean; profile_id?: number | null }
   | { type: "event"; t: number; type_?: string; label: string; bt?: number | null }
   | { type: "roast_started" }
   | { type: "roast_stopped"; roast_id: number | null };
