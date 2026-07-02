@@ -12,7 +12,7 @@ import type { Profile, ProfileMeta, SavedRoastMeta } from "./types";
 type View = "dashboard" | "history" | "profiles";
 
 export default function App() {
-  const { connected, roasting, history, events, live, source, sourceOk, lastSavedId, start, stop, abort, markEvent } =
+  const { connected, roasting, history, events, live, source, sourceOk, roastProfileId, lastSavedId, start, stop, abort, markEvent } =
     useRoastSocket();
   const [view, setView] = useState<View>("dashboard");
 
@@ -37,7 +37,15 @@ export default function App() {
     }).catch(() => setActiveProfile(null));
   };
 
-  const startRoast = () => start(startWeight ? Number(startWeight) : null);
+  const startRoast = () => start(startWeight ? Number(startWeight) : null, activeProfile?.id ?? null);
+
+  // Restore the target profile after a refresh/reconnect mid-roast: the server
+  // remembers which profile the roast is against (snapshot -> roastProfileId).
+  useEffect(() => {
+    if (roastProfileId != null && activeProfile?.id !== roastProfileId) {
+      getProfile(roastProfileId).then(setActiveProfile).catch(() => {});
+    }
+  }, [roastProfileId, activeProfile?.id]);
 
   // Live deviation from the target at the current roast time.
   const target = activeProfile?.points;

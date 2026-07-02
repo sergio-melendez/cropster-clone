@@ -78,16 +78,18 @@ class RoastState:
         self.t0: float | None = None
         self.started_wall: float | None = None  # epoch seconds at charge (for persistence)
         self.start_weight: float | None = None  # green weight (kg) for this roast
+        self.profile_id: int | None = None      # target profile being roasted against
         self.source_ok: bool = True             # False when the source (probe) has dropped
         self.history: list[dict] = []          # [{t, bt, et, ror}, ...]
         self.events: list[dict] = []           # [{t, type, label}, ...]
         self._bt_window: deque = deque()       # (t, bt) for RoR
 
-    def start(self, start_weight: float | None = None) -> None:
+    def start(self, start_weight: float | None = None, profile_id: int | None = None) -> None:
         self.roasting = True
         self.t0 = time.monotonic()
         self.started_wall = time.time()
         self.start_weight = start_weight
+        self.profile_id = profile_id
         self.history.clear()
         self.events.clear()
         self._bt_window.clear()
@@ -213,6 +215,7 @@ class EventIn(BaseModel):
 
 class StartIn(BaseModel):
     start_weight: float | None = None
+    profile_id: int | None = None
 
 
 class StopIn(BaseModel):
@@ -221,7 +224,7 @@ class StopIn(BaseModel):
 
 @app.post("/roast/start")
 async def roast_start(body: StartIn | None = None):
-    state.start(body.start_weight if body else None)
+    state.start(body.start_weight if body else None, body.profile_id if body else None)
     await manager.broadcast({"type": "roast_started"})
     return {"ok": True, "roasting": True}
 
@@ -380,7 +383,8 @@ async def ws_endpoint(ws: WebSocket):
     # Send current history so a late-joining client catches up.
     await ws.send_json({"type": "snapshot", "history": state.history,
                         "events": state.events, "roasting": state.roasting,
-                        "source": source.label, "source_ok": state.source_ok})
+                        "source": source.label, "source_ok": state.source_ok,
+                        "profile_id": state.profile_id})
     try:
         while True:
             await ws.receive_text()  # keepalive / ignore client messages
