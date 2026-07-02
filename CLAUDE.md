@@ -125,6 +125,20 @@ Milestone 1 (done): live BT/ET/RoR curve over WebSocket, start/stop, event
 markers (Turning Point, Dry End, First Crack, Drop), all working on the
 simulator and wired for the real 1048.
 
+Milestone 9 (done): auto-drop detection. When the beans are dumped, BT plummets;
+the sampler detects that and auto-ends+saves the roast (no manual Stop needed).
+`RoastState.detect_drop(t, bt)` (in `main.py`, gated by `AUTO_DROP=True`) arms
+only after BT has risen `DROP_ARM_RISE_C` (15°C) above its running minimum — so
+the charge→turning-point fall never false-fires — then fires when BT drops
+`DROP_DELTA_C` (5°C) below its running peak and stays down for `DROP_SUSTAIN_S`
+(5s) without recovering. On fire the sampler appends a `DROP` event
+(`label:"Drop (auto)"`, bt=peak) and calls the shared `_finish_roast(auto=True)`
+helper (saves like `/roast/stop`, then broadcasts `roast_stopped` with `auto:true`).
+`_finish_roast` also backs `/roast/stop` (manual). Client: `useRoastSocket`
+exposes `autoStopped`/`clearAutoStopped`; `App.tsx` shows a dismissible amber
+"Roast ended automatically — drop detected. Saved to History." banner on the
+dashboard after an auto-stop.
+
 Milestone 8 (done): device-disconnect resilience. The `sampler()` loop wraps
 `source.read()` in try/except so a Phidget unplug (getTemperature raising) can no
 longer kill the task / freeze the stream. After `DEVICE_TIMEOUT_S` (3s) of failed

@@ -12,7 +12,7 @@ import type { Profile, ProfileMeta, SavedRoastMeta } from "./types";
 type View = "dashboard" | "history" | "profiles";
 
 export default function App() {
-  const { connected, roasting, history, events, live, source, sourceOk, roastProfileId, lastSavedId, start, stop, abort, markEvent } =
+  const { connected, roasting, history, events, live, source, sourceOk, roastProfileId, autoStopped, lastSavedId, start, stop, abort, markEvent, clearAutoStopped } =
     useRoastSocket();
   const [view, setView] = useState<View>("dashboard");
 
@@ -90,6 +90,24 @@ export default function App() {
           ))}
         </nav>
       </header>
+
+      {autoStopped && !roasting && (
+        <div
+          style={{
+            display: "flex", alignItems: "center", gap: 10, marginBottom: 16,
+            padding: "12px 18px", borderRadius: 10,
+            background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e", fontWeight: 600,
+          }}
+        >
+          <span>⚑ Roast ended automatically — drop detected. Saved to History.</span>
+          <button
+            onClick={clearAutoStopped}
+            style={{ ...btn, marginLeft: "auto", padding: "4px 10px", fontSize: 13 }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {view === "history" ? (
         <RoastHistory refreshKey={lastSavedId} initialRoastId={historyFocus} />

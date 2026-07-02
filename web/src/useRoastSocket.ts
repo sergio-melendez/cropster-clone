@@ -17,6 +17,7 @@ export function useRoastSocket() {
   const [source, setSource] = useState<string | null>(null);
   const [sourceOk, setSourceOk] = useState(true);   // false when the probe/source drops
   const [roastProfileId, setRoastProfileId] = useState<number | null>(null);  // target profile of the active roast
+  const [autoStopped, setAutoStopped] = useState(false);   // last roast ended by auto-drop detection
   // Bumps each time a roast is saved, so the history view can refresh.
   const [lastSavedId, setLastSavedId] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -62,10 +63,12 @@ export function useRoastSocket() {
             setHistory([]);
             setEvents([]);
             setRoasting(true);
+            setAutoStopped(false);
             break;
           case "roast_stopped":
             setRoasting(false);
             if (msg.roast_id != null) setLastSavedId(msg.roast_id);
+            if (msg.auto) setAutoStopped(true);
             break;
         }
       };
@@ -92,5 +95,5 @@ export function useRoastSocket() {
   const markEvent = (type: string, label?: string, bt?: number, t?: number) =>
     post("/roast/event", { type, label, bt, t });
 
-  return { connected, roasting, history, events, live, source, sourceOk, roastProfileId, lastSavedId, start, stop, abort, markEvent };
+  return { connected, roasting, history, events, live, source, sourceOk, roastProfileId, autoStopped, lastSavedId, start, stop, abort, markEvent, clearAutoStopped: () => setAutoStopped(false) };
 }

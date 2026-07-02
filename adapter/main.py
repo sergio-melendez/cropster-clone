@@ -37,6 +37,13 @@ SAMPLE_HZ = 2.0                 # readings per second
 ROR_WINDOW_S = 30.0            # window for rate-of-rise (delta BT over time)
 DEVICE_TIMEOUT_S = 3.0        # no successful read for this long -> source considered lost
 
+# Auto-drop detection: after the turning point, a sharp sustained BT fall means the
+# beans were dumped (drop) -> end + save the roast automatically.
+AUTO_DROP = True
+DROP_DELTA_C = 5.0            # BT must fall at least this far below its recent peak
+DROP_SUSTAIN_S = 5.0         # ...and stay down this long (no recovery) to count
+DROP_ARM_RISE_C = 15.0       # only arm detection once BT has risen this far past its min (post-TP)
+
 # ---- source selection --------------------------------------------------------
 # Default is the simulator. To use the real Phidget 1048, start the adapter with:
 #
@@ -83,6 +90,12 @@ class RoastState:
         self.history: list[dict] = []          # [{t, bt, et, ror}, ...]
         self.events: list[dict] = []           # [{t, type, label}, ...]
         self._bt_window: deque = deque()       # (t, bt) for RoR
+        # auto-drop detection
+        self._min_bt: float | None = None      # lowest BT so far (turning point)
+        self._drop_armed = False               # True once past the turning point
+        self._peak_bt: float | None = None     # highest BT while armed
+        self._drop_since: float | None = None  # t when BT first fell >=DROP_DELTA below peak
+        self._drop_at: tuple[float, float] | None = None  # (t, bt) of the drop, once confirmed
 
     def start(self, start_weight: float | None = None, profile_id: int | None = None) -> None:
         self.roasting = True
@@ -93,6 +106,11 @@ class RoastState:
         self.history.clear()
         self.events.clear()
         self._bt_window.clear()
+        self._min_bt = None
+        self._drop_armed = False
+        self._peak_bt = None
+        self._drop_since = None
+        self._drop_at = None
         source.start()
 
     def stop(self) -> None:
@@ -114,6 +132,32 @@ class RoastState:
         if dt <= 0:
             return 0.0
         return round((bt - bt0) / dt * 60.0, 1)
+
+    def detect_drop(self, t: float, bt: float) -> bool:
+        """Detect the drop: after the turning point, BT falling >=DROP_DELTA_C below
+        its peak and staying down for DROP_SUSTAIN_S. Returns True once, on confirm.
+
+        Gated on `armed` (BT risen DROP_ARM_RISE_C past its minimum) so the normal
+        charge->turning-point fall at the start of every roast doesn't trigger it.
+        """
+        if not AUTO_DROP:
+            return False
+        self._min_bt = bt if self._min_bt is None else min(self._min_bt, bt)
+        if not self._drop_armed:
+            if bt >= self._min_bt + DROP_ARM_RISE_C:
+                self._drop_armed = True
+                self._peak_bt = bt
+            return False
+        self._peak_bt = max(self._peak_bt or bt, bt)
+        if bt <= self._peak_bt - DROP_DELTA_C:
+            if self._drop_since is None:
+                self._drop_since = t
+            elif t - self._drop_since >= DROP_SUSTAIN_S:
+                self._drop_at = (round(self._drop_since, 2), round(self._peak_bt, 1))
+                return True
+        else:
+            self._drop_since = None   # recovered -> not a drop
+        return False
 
 
 state = RoastState()
@@ -142,6 +186,26 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+
+
+async def _finish_roast(end_weight: float | None = None, auto: bool = False) -> int | None:
+    """Persist (if there's a roast with data) and stop; broadcast roast_stopped.
+
+    Shared by /roast/stop and the sampler's auto-drop. Idempotent: a second call
+    after stop saves nothing (guarded on state.roasting).
+    """
+    roast_id: int | None = None
+    if state.roasting and state.history:
+        roast_id = storage.save_roast(
+            started_at=state.started_wall or time.time(),
+            history=state.history,
+            events=state.events,
+            start_weight=state.start_weight,
+            end_weight=end_weight,
+        )
+    state.stop()
+    await manager.broadcast({"type": "roast_stopped", "roast_id": roast_id, "auto": auto})
+    return roast_id
 
 
 async def sampler() -> None:
@@ -174,6 +238,14 @@ async def sampler() -> None:
                 state.history.append(point)
                 await manager.broadcast({"type": "reading", **point, "roasting": True,
                                          "source_ok": True})
+                # Auto-drop: a sharp sustained BT fall after the turning point ends
+                # the roast (beans dumped) and saves it.
+                if state.detect_drop(t, reading["bt"]) and state._drop_at is not None:
+                    dt, dbt = state._drop_at
+                    state.events.append({"t": dt, "type": "DROP", "label": "Drop (auto)", "bt": dbt})
+                    await _finish_roast(auto=True)
+                    await asyncio.sleep(interval)
+                    continue
             else:
                 await manager.broadcast(
                     {"type": "reading", "t": t, "bt": reading["bt"], "et": reading["et"],
@@ -231,21 +303,8 @@ async def roast_start(body: StartIn | None = None):
 
 @app.post("/roast/stop")
 async def roast_stop(body: StopIn | None = None):
-    # Persist the completed roast before we stop. Guard on `roasting` so a
-    # repeated /roast/stop is idempotent (history lingers after stop, so without
-    # this a second call would save the same roast again). A roast with no
-    # readings (stopped immediately) isn't worth saving.
-    roast_id: int | None = None
-    if state.roasting and state.history:
-        roast_id = storage.save_roast(
-            started_at=state.started_wall or time.time(),
-            history=state.history,
-            events=state.events,
-            start_weight=state.start_weight,
-            end_weight=body.end_weight if body else None,
-        )
-    state.stop()
-    await manager.broadcast({"type": "roast_stopped", "roast_id": roast_id})
+    # Persist + stop (idempotent). Shared with the sampler's auto-drop path.
+    roast_id = await _finish_roast(end_weight=body.end_weight if body else None)
     return {"ok": True, "roasting": False, "roast_id": roast_id}
 
 
